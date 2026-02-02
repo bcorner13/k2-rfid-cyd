@@ -60,35 +60,24 @@ void lvgl_display_init()
     // gfx.setBrightness(255); // optional
     lv_init();
 
-    /* ---------------- Display buffer ---------------- */
-    static lv_draw_buf_t draw_buf;
-
+    /* ---------------- Display buffer (LVGL 9: lv_display_set_buffers) ---------------- */
     const uint32_t buf_pixels = (gfx.width() * gfx.height()) / 10;
+    const uint32_t buf_size_bytes = buf_pixels * sizeof(lv_color_t);
 
-    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(
-        buf_pixels * sizeof(lv_color_t),
-        MALLOC_CAP_SPIRAM
-    );
+    uint8_t *buf1 = (uint8_t *)heap_caps_malloc(buf_size_bytes, MALLOC_CAP_SPIRAM);
     LV_ASSERT_MALLOC(buf1);
 
-    lv_draw_buf_init(
-     &draw_buf,
-     gfx.width(),
-     gfx.height(),
-     LV_COLOR_FORMAT_RGB565,
-     0,
-     buf1,
-     buf_pixels * sizeof(lv_color_t)
- );
     Serial.print("Initialized Display Buffer");
 
     /* ---------------- Display object ---------------- */
     lv_display_t *disp = lv_display_create(gfx.width(), gfx.height());
 
-    lv_display_set_draw_buffers(
+    lv_display_set_buffers(
         disp,
-        &draw_buf,
-        NULL
+        buf1,
+        NULL,
+        buf_size_bytes,
+        LV_DISPLAY_RENDER_MODE_PARTIAL
     );
 
     lv_display_set_flush_cb(disp, my_disp_flush);
@@ -100,6 +89,7 @@ void lvgl_display_init()
     lv_indev_t *touch_indev = lv_indev_create();
     lv_indev_set_type(touch_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(touch_indev, my_touch_read);
+    lv_indev_set_display(touch_indev, disp);  /* LVGL 9: bind input to display */
 
     /* ---------------- Splash screen ---------------- */
     splash_screen = lv_obj_create(NULL);

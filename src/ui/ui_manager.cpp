@@ -147,7 +147,7 @@ void UIManager::updateDashboardFromSpool(const SpoolData& data) {
 }
 
 void UIManager::createOverlay() {
-    layerTop = lv_display_get_layer_top(lv_disp_get_default()); // Changed lv_layer_top()
+    layerTop = lv_display_get_layer_top(lv_display_get_default());
     labelBattery = lv_label_create(layerTop);
     lv_label_set_text(labelBattery, "USB");
     lv_obj_set_align(labelBattery, LV_ALIGN_TOP_RIGHT); // Changed lv_obj_align
@@ -166,7 +166,7 @@ void UIManager::updateBattery(float voltage) {
 }
 
 void UIManager::createColorPicker() {
-    modalColorPicker = lv_obj_create(lv_display_get_layer_top(lv_disp_get_default())); // Changed lv_layer_top()
+    modalColorPicker = lv_obj_create(lv_display_get_layer_top(lv_display_get_default()));
     lv_obj_set_size(modalColorPicker, 280, 200);
     lv_obj_set_align(modalColorPicker, LV_ALIGN_CENTER); // Changed lv_obj_center
     lv_obj_add_flag(modalColorPicker, LV_OBJ_FLAG_HIDDEN);
