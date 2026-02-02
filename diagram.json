@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "author": "Generated from waveshare_s3_43.json",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-s3",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {
+        "psram": "enabled",
+        "flashSize": "16MB"
+      }
+    },
+    {
+      "type": "wokwi-ili9341",
+      "id": "tft",
+      "top": -220,
+      "left": 200,
+      "attrs": {
+        "rotation": "0"
+      }
+    },
+    {
+      "type": "wokwi-ft6236",
+      "id": "touch",
+      "top": -220,
+      "left": 420
+    }
+  ],
+  "connections": [
+    ["esp:3V3", "tft:VCC", "red"],
+    ["esp:GND", "tft:GND", "black"],
+
+    ["esp:GPIO11", "tft:CS", "green"],
+    ["esp:GPIO12", "tft:DC", "green"],
+    ["esp:GPIO13", "tft:RST", "green"],
+    ["esp:GPIO14", "tft:SCK", "green"],
+    ["esp:GPIO15", "tft:MOSI", "green"],
+
+    ["esp:3V3", "touch:VCC", "red"],
+    ["esp:GND", "touch:GND", "black"],
+    ["esp:GPIO8", "touch:SDA", "blue"],
+    ["esp:GPIO9", "touch:SCL", "blue"],
+    ["esp:GPIO10", "touch:INT", "blue"]
+  ]
+}
