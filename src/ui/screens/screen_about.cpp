@@ -14,6 +14,7 @@ static void back_event_cb(lv_event_t* e) {
 
 void ScreenAbout::init() {
     screen = lv_obj_create(NULL);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
     lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_OFF);
 
@@ -44,6 +45,7 @@ void ScreenAbout::init() {
     lv_obj_set_flex_align(infoContainer, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(infoContainer, 10, 0);
 
+    labelBoard = lv_label_create(infoContainer);
     labelESPVersion = lv_label_create(infoContainer);
     labelLVGLVersion = lv_label_create(infoContainer);
     labelChipInfo = lv_label_create(infoContainer);
@@ -51,6 +53,7 @@ void ScreenAbout::init() {
     labelFlashInfo = lv_label_create(infoContainer);
     labelStorageInfo = lv_label_create(infoContainer);
 
+    lv_obj_set_style_text_font(labelBoard, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_font(labelESPVersion, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_font(labelLVGLVersion, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_font(labelChipInfo, &lv_font_montserrat_20, 0);
@@ -67,6 +70,11 @@ void ScreenAbout::show() {
     uint32_t flash_size_mb = ESP.getFlashChipSize() / (1024 * 1024);
 
     // --- Populate Labels ---
+#ifdef BOARD_ESP32_S3_TOUCH_LCD_4_3C
+    lv_label_set_text(labelBoard, "Board: ESP32-S3-Touch-LCD-4.3C");
+#else
+    lv_label_set_text(labelBoard, "Board: (see build)");
+#endif
     lv_label_set_text_fmt(labelESPVersion, "ESP-IDF: %s", esp_get_idf_version());
     lv_label_set_text_fmt(labelLVGLVersion, "LVGL: %d.%d.%d", LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
     lv_label_set_text_fmt(labelChipInfo, "Chip: %s rev %d, %d cores", "ESP32-S3", chip_info.revision, chip_info.cores);

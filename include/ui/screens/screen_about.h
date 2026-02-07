@@ -11,6 +11,7 @@ public:
 
 private:
     lv_obj_t* labelTitle;
+    lv_obj_t* labelBoard;
     lv_obj_t* labelESPVersion;
     lv_obj_t* labelLVGLVersion;
     lv_obj_t* labelChipInfo;

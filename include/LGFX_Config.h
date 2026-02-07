@@ -1,18 +1,26 @@
 #ifndef LGFX_CONFIG_H_
 #define LGFX_CONFIG_H_
 
+/* Target board: Waveshare ESP32-S3-Touch-LCD-4.3C (see docs/board-variant-4.3C.md). */
+
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-// #include <lgfx/v1/platforms/esp32/Light_PWM.hpp> // Removed Light_PWM include
+/* 4.3C backlight is EXIO_PWM from U10 (I2C expander), not direct GPIO – no Light_PWM */
 #include <lgfx/v1/touch/Touch_GT911.hpp>
+
+/*
+ * 4.3C WROOM pinout (for reference):
+ *   LCD I2C: IO8 = SDA, IO9 = SCL (shared with Audio/RTC; touch GT911 and U10 on same bus).
+ *   Touch:   IO4 = CTP IRQ.  CTP RST = EXIO1 (via U10, not direct GPIO).
+ *   Display: EXIO2 = DISP (backlight/display control via U10). EXIO_PWM = U10 pin 10 (brightness).
+ */
 
 class LGFX : public lgfx::LGFX_Device
 {
 public:
     lgfx::v1::Bus_RGB   _bus_instance;
     lgfx::v1::Panel_RGB _panel_instance;
-    // lgfx::v1::Light_PWM _light_instance; // Removed Light_PWM instance
     lgfx::v1::Touch_GT911 _touch_instance;
 
 public:
@@ -43,7 +51,7 @@ public:
             cfg.pin_hsync = 46;
             cfg.pin_pclk = 7;
 
-            cfg.freq_write = 16000000;
+            cfg.freq_write = 12000000;  /* 12 MHz; lower can reduce RGB jitter/drift (ESP FAQ) */
             cfg.hsync_polarity = 0;
             cfg.hsync_front_porch = 8;
             cfg.hsync_pulse_width = 4;
@@ -68,22 +76,21 @@ public:
             _panel_instance.setBus(&_bus_instance);
         }
 
-        // Removed backlight configuration and instance completely
-        // _panel_instance.setLight(&_light_instance); // This line is also removed
+        /* Backlight on 4.3C: EXIO_PWM from U10 pin 10 (I2C expander), not ESP32 GPIO. See separate backlight control via U10 I2C. */
 
-        { // Configure touch
+        { // Configure touch (I2C, separate from RGB display bus)
             auto cfg = _touch_instance.config();
-            cfg.i2c_port = 0;    // Try Port 0 (Standard for default Wire)
-            cfg.i2c_addr = 0x5D; // Explicitly set address (Common for GT911)
-            cfg.freq = 400000;   // Ensure 400kHz frequency
+            cfg.i2c_port = 0;
+            cfg.i2c_addr = 0x5D;
+            cfg.freq = 100000;   // 100kHz can be more stable than 400kHz with long wires
             cfg.pin_sda = 8;
             cfg.pin_scl = 9;
             cfg.pin_int = 4;
             cfg.pin_rst = -1;
             cfg.x_min = 0;
-            cfg.x_max = 799; // Adjust touch area
+            cfg.x_max = 799;
             cfg.y_min = 0;
-            cfg.y_max = 479; // Adjust touch area
+            cfg.y_max = 479;
             cfg.bus_shared = false;
             _touch_instance.config(cfg);
             _panel_instance.setTouch(&_touch_instance);
