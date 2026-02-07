@@ -1,4 +1,14 @@
 #pragma once
+/**
+ * @file ui_manager.h
+ * @brief LVGL 9 UI controller: screens, events, current spool, color picker.
+ *
+ * Owns ScreenMain, ScreenLibrary, ScreenSettings, ScreenAbout and routes
+ * events (library selection, write tag, weight slider, color picker, etc.).
+ * currentSpool is the in-memory spool; updateDashboardFromSpool() pushes
+ * it to the main screen.
+ */
+
 #include <lvgl.h>
 #include "screens/screen_main.h"
 #include "screens/screen_library.h"

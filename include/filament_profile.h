@@ -1,4 +1,12 @@
 #pragma once
+/**
+ * @file filament_profile.h
+ * @brief Single filament profile: brand, name, material type, color, temps, weight.
+ *
+ * Used by FilamentDB (loaded from material_database.json) and by SpoolData
+ * when creating a new spool from a library selection. Weight defaults to
+ * 1000 g for new spools; JSON does not currently supply weight.
+ */
 #include <Arduino.h>
 #include <string>
 

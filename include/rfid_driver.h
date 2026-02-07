@@ -1,4 +1,12 @@
 #pragma once
+/**
+ * @file rfid_driver.h
+ * @brief PN532 NFC driver for MIFARE Classic 1K CFS tags (read/write).
+ *
+ * Uses AES-derived Key A for sector auth; readCFSTag/writeCFSTag operate
+ * on the CFS payload. SpoolData holds the decoded/encoded string format.
+ */
+
 #include <Arduino.h>
 #include <Adafruit_PN532.h>
 #include "mbedtls/aes.h"

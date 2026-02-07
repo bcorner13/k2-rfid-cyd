@@ -3,6 +3,7 @@
 
 void ScreenSettings::init() {
     screen = lv_obj_create(NULL);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
 
     lv_obj_t* title = lv_label_create(screen);

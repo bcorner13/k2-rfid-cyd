@@ -4,9 +4,33 @@
 #include "lvgl_display.h"
 #include "LGFX_Config.h"
 
+#if BOARD_ESP32_S3_TOUCH_LCD_4_3C
+#include <esp_io_expander.hpp>
+#endif
+
 LV_IMG_DECLARE(logo_thingy);
 
 static LGFX gfx;
+
+#if BOARD_ESP32_S3_TOUCH_LCD_4_3C
+/* CH422G (U10) on I2C GPIO8/9: EXIO1=TP_RST, EXIO2=DISP. Init before display so touch and backlight work like official demos. */
+static void init_ch422g_4_3c()
+{
+    const int SDA = 8, SCL = 9;
+    esp_expander::CH422G expander(SCL, SDA, ESP_IO_EXPANDER_I2C_CH422G_ADDRESS);
+    if (!expander.init() || !expander.begin()) {
+        Serial.println("CH422G init/begin failed (touch reset and backlight may not work)");
+        return;
+    }
+    /* begin() sets IO0-7 output high → EXIO1 (TP_RST) and EXIO2 (DISP) high. Run touch reset sequence (official demo style). */
+    const int EXIO1_TP_RST = 1;
+    expander.digitalWrite(EXIO1_TP_RST, LOW);
+    delay(20);
+    expander.digitalWrite(EXIO1_TP_RST, HIGH);
+    delay(50);   /* let GT911 come out of reset before LGFX/touch init */
+    Serial.println("CH422G OK (TP_RST pulse, DISP high)");
+}
+#endif
 static lv_obj_t* splash_screen;
 static lv_obj_t* status_container;
 static int status_label_count = 0;
@@ -44,12 +68,15 @@ void my_touch_read(lv_indev_t *indev, lv_indev_data_t *data)
     uint16_t touchX, touchY;
     bool touched = gfx.getTouch(&touchX, &touchY);
     data->state = touched ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
-    data->point.x = touchX;
-    data->point.y = touchY;
+    data->point.x = (int16_t)touchX;
+    data->point.y = (int16_t)touchY;
 }
 
 void lvgl_display_init()
 {
+#if BOARD_ESP32_S3_TOUCH_LCD_4_3C
+    init_ch422g_4_3c();
+#endif
     gfx.begin();
     gfx.fillScreen(TFT_RED);
     delay(500);
@@ -57,38 +84,27 @@ void lvgl_display_init()
     delay(500);
     gfx.fillScreen(TFT_BLUE);
     delay(500);
-    // gfx.setBrightness(255); // optional
+    /* 4.3C backlight is via U10 (I2C), not LGFX setBrightness – enable when U10 driver is added */
     lv_init();
 
-    /* ---------------- Display buffer ---------------- */
-    static lv_draw_buf_t draw_buf;
-
+    /* ---------------- Display buffer (LVGL 9: lv_display_set_buffers) ---------------- */
     const uint32_t buf_pixels = (gfx.width() * gfx.height()) / 10;
+    const uint32_t buf_size_bytes = buf_pixels * sizeof(lv_color_t);
 
-    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(
-        buf_pixels * sizeof(lv_color_t),
-        MALLOC_CAP_SPIRAM
-    );
+    uint8_t *buf1 = (uint8_t *)heap_caps_malloc(buf_size_bytes, MALLOC_CAP_SPIRAM);
     LV_ASSERT_MALLOC(buf1);
 
-    lv_draw_buf_init(
-     &draw_buf,
-     gfx.width(),
-     gfx.height(),
-     LV_COLOR_FORMAT_RGB565,
-     0,
-     buf1,
-     buf_pixels * sizeof(lv_color_t)
- );
     Serial.print("Initialized Display Buffer");
 
     /* ---------------- Display object ---------------- */
     lv_display_t *disp = lv_display_create(gfx.width(), gfx.height());
 
-    lv_display_set_draw_buffers(
+    lv_display_set_buffers(
         disp,
-        &draw_buf,
-        NULL
+        buf1,
+        NULL,
+        buf_size_bytes,
+        LV_DISPLAY_RENDER_MODE_PARTIAL
     );
 
     lv_display_set_flush_cb(disp, my_disp_flush);
@@ -100,6 +116,7 @@ void lvgl_display_init()
     lv_indev_t *touch_indev = lv_indev_create();
     lv_indev_set_type(touch_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(touch_indev, my_touch_read);
+    lv_indev_set_display(touch_indev, disp);  /* LVGL 9: bind input to display */
 
     /* ---------------- Splash screen ---------------- */
     splash_screen = lv_obj_create(NULL);
@@ -110,11 +127,6 @@ void lvgl_display_init()
     );
 
     lv_screen_load(splash_screen);
-    lv_obj_t *test = lv_label_create(lv_screen_active());
-    lv_label_set_text(test, "LVGL ALIVE");
-    lv_obj_center(test);
-    lv_obj_invalidate(lv_screen_active());
-    lv_refr_now(lv_display_get_default());
 
     lv_obj_t *splash_img = lv_img_create(splash_screen);
     lv_img_set_src(splash_img, &logo_thingy);

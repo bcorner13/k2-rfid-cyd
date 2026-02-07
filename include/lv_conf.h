@@ -18,7 +18,7 @@
 
 /* Hardware and Driver configuration */
 #define LV_DISP_DEF_REFR_PERIOD 30      /*[ms]*/
-#define LV_INDEV_DEF_READ_PERIOD 30     /*[ms]*/
+#define LV_INDEV_DEF_READ_PERIOD 80     /*[ms] - higher = less touch sampling, can reduce jitter */
 #define LV_DPI_DEF 130     /*[px/inch]*/
 
 /* Drawing configuration */

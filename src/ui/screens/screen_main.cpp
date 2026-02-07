@@ -1,46 +1,58 @@
-#include <ui/screens/screen_main.h> // Updated include path
+#include <ui/screens/screen_main.h>
+#include <spool_data.h>
+#include <ui/widgets/spool_widget.h>
+#include <filament_db.h>
+#include <cstring>
 
-#include <spool_data.h> // Updated include path
-#include <ui/widgets/spool_widget.h> // Updated include path
+// Return the nth option (newline-separated) into buf for display
+static void get_dropdown_option_at(lv_obj_t* dropdown, uint16_t index, char* buf, size_t buf_size) {
+    const char* opts = lv_dropdown_get_options(dropdown);
+    if (!opts || buf_size == 0) { buf[0] = '\0'; return; }
+    for (uint16_t i = 0; i <= index; i++) {
+        const char* start = opts;
+        while (*opts != '\0' && *opts != '\n') opts++;
+        if (i == index) {
+            size_t len = (size_t)(opts - start);
+            if (len >= buf_size) len = buf_size - 1;
+            memcpy(buf, start, len);
+            buf[len] = '\0';
+            return;
+        }
+        if (*opts == '\0') break;
+        opts++;
+    }
+    buf[0] = '\0';
+}
 
-// Helper function to find the index of an option in a dropdown's options string
+// Find dropdown index: exact match, or first option that starts with target (for truncated tag type e.g. "CR-PL" -> "CR-PLA")
 static uint16_t find_dropdown_option_index(lv_obj_t* dropdown, const std::string& target_option) {
     const char* options_cstr = lv_dropdown_get_options(dropdown);
-    if (!options_cstr) {
-        return 0; // No options, default to 0
-    }
+    if (!options_cstr) return 0;
     std::string options_str(options_cstr);
-
     size_t start = 0;
     uint16_t index = 0;
     while (start < options_str.length()) {
         size_t end = options_str.find('\n', start);
         std::string current_option = options_str.substr(start, (end == std::string::npos) ? std::string::npos : end - start);
-
-        // Trim whitespace from current_option if necessary
         size_t first = current_option.find_first_not_of(' ');
         size_t last = current_option.find_last_not_of(' ');
-        if (std::string::npos == first) {
-            current_option = "";
-        } else {
-            current_option = current_option.substr(first, (last - first + 1));
-        }
+        if (std::string::npos == first) current_option = "";
+        else current_option = current_option.substr(first, last - first + 1);
 
-        if (current_option == target_option) {
-            return index;
-        }
-        if (end == std::string::npos) {
-            break;
-        }
+        if (current_option == target_option) return index;
+        if (!target_option.empty() && current_option.length() >= target_option.length() &&
+            current_option.compare(0, target_option.length(), target_option) == 0) return index;
+        if (end == std::string::npos) break;
         start = end + 1;
         index++;
     }
-    return 0; // Default to the first option if not found
+    return 0;
 }
 
 
 void ScreenMain::init() {
     screen = lv_obj_create(NULL);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
 
@@ -65,7 +77,7 @@ void ScreenMain::init() {
     lv_obj_set_flex_align(leftPanel, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     spoolWidget.create(leftPanel);
-    lv_obj_set_size(spoolWidget.getContainer(), 280, 280);
+    lv_obj_set_size(spoolWidget.getContainer(), 280, 340);
 
     labelHexColor = lv_label_create(leftPanel);
     lv_label_set_text(labelHexColor, "#FFFFFF");
@@ -82,15 +94,20 @@ void ScreenMain::init() {
     lv_obj_set_flex_align(rightPanel, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(rightPanel, 20, 0);
 
-    // Dropdowns
+    // Dropdowns: options from material_database.json (unique brands and material types)
     ddBrand = lv_dropdown_create(rightPanel);
-    lv_dropdown_set_options(ddBrand, "Creality\nGeneric\nPolymaker");
+    {
+        String opts = filamentDB.getBrandOptionsForDropdown();
+        lv_dropdown_set_options(ddBrand, opts.isEmpty() ? "Generic" : opts.c_str());
+    }
     lv_obj_set_width(ddBrand, 300);
     lv_obj_set_style_text_font(ddBrand, &lv_font_montserrat_20, 0);
 
-
     ddType = lv_dropdown_create(rightPanel);
-    lv_dropdown_set_options(ddType, "PLA\nPETG\nABS\nASA\nTPU");
+    {
+        String opts = filamentDB.getMaterialTypeOptionsForDropdown();
+        lv_dropdown_set_options(ddType, opts.isEmpty() ? "PLA" : opts.c_str());
+    }
     lv_obj_set_width(ddType, 300);
     lv_obj_set_style_text_font(ddType, &lv_font_montserrat_20, 0);
 
@@ -102,9 +119,11 @@ void ScreenMain::init() {
 
     sliderWeight = lv_slider_create(sliderCont);
     lv_obj_set_width(sliderWeight, 300);
-    lv_obj_set_align(sliderWeight, LV_ALIGN_TOP_MID); // Changed from lv_obj_align
-    lv_obj_set_y(sliderWeight, 10); // Set y offset
+    lv_obj_set_align(sliderWeight, LV_ALIGN_TOP_MID);
+    lv_obj_set_y(sliderWeight, 10);
     lv_slider_set_range(sliderWeight, 0, 1000);
+    lv_slider_set_mode(sliderWeight, LV_SLIDER_MODE_NORMAL);
+    lv_slider_set_orientation(sliderWeight, LV_SLIDER_ORIENTATION_HORIZONTAL);
 
     labelWeight = lv_label_create(sliderCont);
     lv_label_set_text(labelWeight, "1000g");
@@ -145,14 +164,19 @@ void ScreenMain::show() {
 }
 
 void ScreenMain::update(const SpoolData& data) {
-    spoolWidget.update(data.getType().c_str(), data.getColorHex(), data.getWeight());
+    // Update dropdowns first (match by exact or prefix so e.g. "CR-PL" from tag selects "CR-PLA")
+    lv_dropdown_set_selected(ddBrand, find_dropdown_option_index(ddBrand, data.getBrand()));
+    lv_dropdown_set_selected(ddType, find_dropdown_option_index(ddType, data.getType()));
+
+    // Use full dropdown option text for spool label so "PLA-Silk" / "CR-PLA" show correctly
+    char typeBuf[64];
+    get_dropdown_option_at(ddType, lv_dropdown_get_selected(ddType), typeBuf, sizeof(typeBuf));
+    const char* displayType = (typeBuf[0] != '\0') ? typeBuf : data.getType().c_str();
+
+    spoolWidget.update(displayType, data.getColorHex(), data.getWeight());
     lv_label_set_text(labelHexColor, data.getColorName().c_str());
     lv_slider_set_value(sliderWeight, data.getWeight(), LV_ANIM_ON);
     lv_label_set_text_fmt(labelWeight, "%dg", data.getWeight());
-
-    // Update dropdowns
-    lv_dropdown_set_selected(ddBrand, find_dropdown_option_index(ddBrand, data.getBrand()));
-    lv_dropdown_set_selected(ddType, find_dropdown_option_index(ddType, data.getType()));
 
     // Explicitly invalidate the updated objects to force a redraw
     lv_obj_invalidate(spoolWidget.getContainer());

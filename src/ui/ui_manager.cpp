@@ -65,8 +65,10 @@ void UIManager::event_handler(lv_event_t* e) {
                 // Success
             }
         }
-        else if (obj == ui.screenMain.spoolWidget.getContainer()) {
-            ui.showColorPicker();
+        else if (obj == ui.screenMain.spoolWidget.getContainer() ||
+                 obj == ui.screenMain.spoolWidget.getFilamentArc() ||
+                 obj == ui.screenMain.spoolWidget.getCore()) {
+            ui.showColorPicker();  // tap center or ring to pick color
         }
         else if (obj == ui.screenSettings.btnUpdateDB) {
             network.updateFilamentDB();
@@ -78,13 +80,20 @@ void UIManager::event_handler(lv_event_t* e) {
             ESP.restart();
         }
 
-        else if (lv_obj_get_parent(obj) == ui.screenLibrary.grid) { // Changed .list to .grid
-            size_t idx = (size_t)lv_obj_get_user_data(obj);
-            auto all = filamentDB.getAllFilaments();
-            if (idx < all.size()) {
-                SpoolData newSpool(all[idx]);
-                ui.updateDashboardFromSpool(newSpool);
-                ui.showMainScreen();
+        else {
+            /* Filament grid: tap may hit cell, inner, swatch, or label – find the grid cell */
+            lv_obj_t* cell = obj;
+            while (cell && lv_obj_get_parent(cell) != ui.screenLibrary.grid) {
+                cell = lv_obj_get_parent(cell);
+            }
+            if (cell && lv_obj_get_parent(cell) == ui.screenLibrary.grid) {
+                size_t idx = (size_t)lv_obj_get_user_data(cell);
+                auto all = filamentDB.getAllFilaments();
+                if (idx < all.size()) {
+                    SpoolData newSpool(all[idx]);
+                    ui.updateDashboardFromSpool(newSpool);
+                    ui.showMainScreen();
+                }
             }
         }
     }
@@ -109,6 +118,8 @@ void UIManager::showMainScreen() {
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.spoolWidget.getContainer(), event_handler, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(screenMain.spoolWidget.getFilamentArc(), event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.spoolWidget.getCore(), event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_ALL, NULL);
     screenMain.show();
 }
@@ -147,12 +158,14 @@ void UIManager::updateDashboardFromSpool(const SpoolData& data) {
 }
 
 void UIManager::createOverlay() {
-    layerTop = lv_display_get_layer_top(lv_disp_get_default()); // Changed lv_layer_top()
+    layerTop = lv_display_get_layer_top(lv_display_get_default());
+    lv_obj_clear_flag(layerTop, LV_OBJ_FLAG_SCROLLABLE);  /* prevent touch from scrolling whole screen */
     labelBattery = lv_label_create(layerTop);
-    lv_label_set_text(labelBattery, "USB");
-    lv_obj_set_align(labelBattery, LV_ALIGN_TOP_RIGHT); // Changed lv_obj_align
-    lv_obj_set_x(labelBattery, -5); // Set x offset
-    lv_obj_set_y(labelBattery, 5); // Set y offset
+    lv_label_set_text(labelBattery, "");
+    lv_obj_set_align(labelBattery, LV_ALIGN_TOP_RIGHT);
+    lv_obj_set_x(labelBattery, -5);
+    lv_obj_set_y(labelBattery, 5);
+    lv_obj_add_flag(labelBattery, LV_OBJ_FLAG_HIDDEN);  /* hidden until real battery/voltage */
 }
 
 void UIManager::updateBattery(float voltage) {
@@ -166,7 +179,7 @@ void UIManager::updateBattery(float voltage) {
 }
 
 void UIManager::createColorPicker() {
-    modalColorPicker = lv_obj_create(lv_display_get_layer_top(lv_disp_get_default())); // Changed lv_layer_top()
+    modalColorPicker = lv_obj_create(lv_display_get_layer_top(lv_display_get_default()));
     lv_obj_set_size(modalColorPicker, 280, 200);
     lv_obj_set_align(modalColorPicker, LV_ALIGN_CENTER); // Changed lv_obj_center
     lv_obj_add_flag(modalColorPicker, LV_OBJ_FLAG_HIDDEN);
