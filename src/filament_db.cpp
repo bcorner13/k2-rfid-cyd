@@ -119,6 +119,7 @@ bool FilamentDB::loadDatabase() {
         profile.brand         = base["brand"] | "";
         profile.name          = base["name"] | "";
         profile.material_type = base["meterialType"] | "";
+        profile.material_type.trim();
 
         JsonArray colors = base["colors"];
         if (!colors.isNull() && colors.size() > 0) {
@@ -156,9 +157,48 @@ std::vector<FilamentProfile> FilamentDB::getAllFilaments() {
     return cache;
 }
 
-FilamentProfile FilamentDB::getProfileById(const String& id) const { // Modified signature
-    for (const auto& p : cache) {
-        if (p.id == id) return p;
-    }
+FilamentProfile FilamentDB::getProfileById(const String& id) const {
+    FilamentProfile out;
+    if (getProfileById(id, out)) return out;
     return {};
+}
+
+bool FilamentDB::getProfileById(const String& id, FilamentProfile& out) const {
+    for (const auto& p : cache) {
+        if (p.id == id) {
+            out = p;
+            return true;
+        }
+    }
+    return false;
+}
+
+String FilamentDB::getBrandOptionsForDropdown() const {
+    std::vector<String> seen;
+    String result;
+    for (const auto& p : cache) {
+        if (p.brand.isEmpty()) continue;
+        bool found = false;
+        for (const auto& s : seen) if (s == p.brand) { found = true; break; }
+        if (found) continue;
+        seen.push_back(p.brand);
+        if (result.length()) result += "\n";
+        result += p.brand;
+    }
+    return result;
+}
+
+String FilamentDB::getMaterialTypeOptionsForDropdown() const {
+    std::vector<String> seen;
+    String result;
+    for (const auto& p : cache) {
+        if (p.material_type.isEmpty()) continue;
+        bool found = false;
+        for (const auto& s : seen) if (s == p.material_type) { found = true; break; }
+        if (found) continue;
+        seen.push_back(p.material_type);
+        if (result.length()) result += "\n";
+        result += p.material_type;
+    }
+    return result;
 }

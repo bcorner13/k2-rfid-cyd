@@ -1,12 +1,19 @@
+/**
+ * @file main.cpp
+ * @brief Application entry: display init, filament DB, config, UI.
+ *
+ * Boot sequence: serial, LVGL display (splash), optional WiFi/RFID status,
+ * LittleFS + FilamentDB load, then UIManager and main loop (lv_timer_handler).
+ */
 #include <Arduino.h>
 #include <esp_task_wdt.h>
-#include <ui/screens/screen_filament_select.h> // Changed to angle brackets
-#include <lvgl_display.h> // Changed to angle brackets
-#include <ui/ui_manager.h> // Changed to angle brackets
-#include <system_state.h> // Changed to angle brackets
-#include <config_manager.h> // Changed to angle brackets
+#include <ui/screens/screen_filament_select.h>
+#include <lvgl_display.h>
+#include <ui/ui_manager.h>
+#include <system_state.h>
+#include <config_manager.h>
 #include <filament_db.h>
-#include <network_manager.h> // Changed to angle brackets
+#include <network_manager.h>
 #include <ui/screens/screen_about.h>
 
 void setup() {

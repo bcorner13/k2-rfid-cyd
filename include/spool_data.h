@@ -1,4 +1,13 @@
 #pragma once
+/**
+ * @file spool_data.h
+ * @brief CFS tag payload: fixed-length string encoding and in-memory representation.
+ *
+ * SpoolData can be built from a FilamentProfile (for writing to tag) or from
+ * a raw RFID string (reading from tag). Material type is 5 chars on-tag;
+ * brand is not stored on-tag (lost on read). trim_copy() is used so tag
+ * fields match UI dropdown options. See docs/rfid/creality-k2plus-rfid-spec.md.
+ */
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -14,14 +23,22 @@ inline std::string format_hex(uint32_t val, int digits) {
     return std::string(buf);
 }
 
+// Trim leading/trailing spaces (for tag field matching with dropdown options)
+inline std::string trim_copy(const std::string& s) {
+    size_t first = s.find_first_not_of(' ');
+    if (first == std::string::npos) return "";
+    size_t last = s.find_last_not_of(' ');
+    return s.substr(first, last - first + 1);
+}
+
 struct SpoolData {
   public:
     SpoolData() = default;
 
     // Constructor from FilamentProfile (for writing to tag)
     explicit SpoolData(const FilamentProfile& profile) {
-        _brandName = profile.brand.c_str(); // Store brand name
-        _materialType = profile.material_type.c_str();
+        _brandName = trim_copy(profile.brand.c_str());
+        _materialType = trim_copy(profile.material_type.c_str());
         _materialColorNumeric = profile.color_hex;
         _materialColorString = profile.color_name.c_str();
         _materialWeight = profile.weight_g;
@@ -55,7 +72,7 @@ struct SpoolData {
         _materialDate = spooldata.substr(0, 5);
         _materialVendor = spooldata.substr(5, 4);
         _materialBatch = spooldata.substr(9, 2);
-        _materialType = spooldata.substr(12, 5);
+        _materialType = trim_copy(spooldata.substr(12, 5));
 
         try {
             _materialColorNumeric = std::stoi(spooldata.substr(18, 6), nullptr, 16);
@@ -95,7 +112,7 @@ struct SpoolData {
     }
 
     void setType(const char* t) {
-        _materialType = t;
+        _materialType = t ? trim_copy(std::string(t)) : "";
         _generateSpooldataString();
     }
 

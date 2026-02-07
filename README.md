@@ -1,23 +1,49 @@
 # K2-RFID-CYD 🧵
 
-A standalone, touchscreen-based RFID programmer for the Creality K2 Plus & CFS (Creality Filament System). Built for the **ESP32-2432S028** "Cheap Yellow Display."
+A standalone, touchscreen-based RFID programmer for the Creality K2 Plus & CFS (Creality Filament System).
 
 ## 🚀 Features
-* **Standalone Operation:** No phone or PC required; program tags directly from the 2.8" touch screen.
-* **Inventory Management:** Track remaining spool weight and "Cold Storage" stock.
-* **Safe Erase:** Protocol-aware logic to reset tags without bricking sector trailers.
-* **Visual/Audible Feedback:** Onboard RGB LED and Piezo support for success/error states.
 
-## 🛠 Hardware
-* **Display:** ESP32-2432S028 (2.8" TFT Touch)
-* **Reader:** RC522 RFID Module (13.56MHz)
-* **Tags:** Mifare Classic 1K (Wet Inlays or Stickers)
+* **Standalone operation** — No phone or PC required; program CFS tags from the touch screen.
+* **Filament library** — Pick from material database (brand, type, color); spool widget shows remaining weight.
+* **Tag read/write** — MIFARE Classic 1K tags; CFS payload format (see `docs/rfid/creality-k2plus-rfid-spec.md`).
+* **Visual feedback** — LVGL 9 UI; color picker, weight slider, main/library/settings/about screens.
 
-## 📜 Credits & Acknowledgments
-This project builds upon the groundbreaking work of the Creality community:
-* **DnG-Crafts (K2-RFID):** For the initial decoding of the Creality RFID hex structures and data formats.
-* **OpenSpool Project:** For insights into the CFS material database and vendor ID mappings.
-* **TFT_eSPI & LVGL:** For the graphics engines powering the native UI.
+## 🛠 Hardware (current target)
+
+| Component | Details |
+|-----------|---------|
+| **Board** | Waveshare ESP32-S3 Touch LCD 4.3" (**4.3C** variant) |
+| **Display** | 800×480 RGB LCD, LovyanGFX; touch via GT911 (I2C). Backlight/CTP reset via CH422G (U10). |
+| **RFID** | PN532 (13.56 MHz); MIFARE Classic 1K tags. |
+| **Docs** | [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) — pinout, schematic, CH422G init. |
+
+## 📁 Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) | 4.3C board verification, schematic, LovyanGFX/CH422G notes. |
+| [docs/CHECKPOINT.md](docs/CHECKPOINT.md) | Checkpoint state, build status, model summary, recent changes. |
+| [docs/CODE-OVERVIEW.md](docs/CODE-OVERVIEW.md) | Module map and data flow (embedded + markdown overview). |
+| [docs/rfid/creality-k2plus-rfid-spec.md](docs/rfid/creality-k2plus-rfid-spec.md) | CFS tag layout and sector usage. |
+
+In-code documentation: see `@file` / `@brief` blocks in `include/filament_db.h`, `include/filament_profile.h`, `include/spool_data.h`, `include/rfid_driver.h`, `include/ui/ui_manager.h`, and `src/main.cpp`.
+
+## 🔧 Build & upload
+
+```bash
+pio run
+pio run -t upload
+```
+
+Default env: `waveshare_s3_43` (PlatformIO).
+
+## 📜 Credits & acknowledgments
+
+* **DnG-Crafts (K2-RFID)** — Initial decoding of Creality RFID hex structures and data formats.
+* **OpenSpool** — CFS material database and vendor ID mappings.
+* **LovyanGFX & LVGL** — Graphics and UI.
 
 ## ⚖️ License
-Distributed under the MIT License. See `LICENSE` for more information.
+
+MIT. See `LICENSE` for details.
