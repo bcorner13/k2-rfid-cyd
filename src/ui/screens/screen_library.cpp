@@ -151,5 +151,5 @@ void ScreenLibrary::populate()
 
 void ScreenLibrary::show()
 {
-    lv_screen_load(screen); // Changed from lv_scr_load
+    lv_screen_load_anim(screen, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
 }

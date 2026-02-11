@@ -3,6 +3,15 @@
 #include <filament_db.h>
 #include <cstring>
 
+// Return black text for light backgrounds, white for dark
+static lv_color_t contrasting_text_color(uint32_t bg_hex) {
+    uint8_t r = (bg_hex >> 16) & 0xFF;
+    uint8_t g = (bg_hex >> 8) & 0xFF;
+    uint8_t b = bg_hex & 0xFF;
+    float luminance = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f;
+    return (luminance > 0.5f) ? lv_color_black() : lv_color_white();
+}
+
 // Return the nth option (newline-separated) into buf for display
 static void get_dropdown_option_at(lv_obj_t* dropdown, uint16_t index, char* buf, size_t buf_size) {
     const char* opts = lv_dropdown_get_options(dropdown);
@@ -111,6 +120,13 @@ void ScreenMain::init() {
     lv_obj_set_flex_align(rightPanel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(rightPanel, 20, 0);
 
+    labelName = lv_label_create(rightPanel);
+    lv_label_set_text(labelName, "Generic PLA");
+    lv_obj_set_width(labelName, LV_PCT(100));
+    lv_label_set_long_mode(labelName, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_font(labelName, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(labelName, lv_color_hex(0x333333), 0);
+
     ddBrand = lv_dropdown_create(rightPanel);
     {
         String opts = filamentDB.getBrandOptionsForDropdown();
@@ -132,15 +148,18 @@ void ScreenMain::init() {
     lv_obj_set_height(sliderCont, 56);
     lv_obj_set_style_bg_opa(sliderCont, 0, 0);
     lv_obj_set_style_border_width(sliderCont, 0, 0);
+    lv_obj_clear_flag(sliderCont, LV_OBJ_FLAG_SCROLLABLE);
 
     sliderWeight = lv_slider_create(sliderCont);
     lv_obj_set_width(sliderWeight, lv_pct(100));
-    lv_obj_set_height(sliderWeight, 32);
+    lv_obj_set_height(sliderWeight, 20);
     lv_obj_set_align(sliderWeight, LV_ALIGN_TOP_MID);
-    lv_obj_set_y(sliderWeight, 0);
+    lv_obj_set_y(sliderWeight, 4);
     lv_slider_set_range(sliderWeight, 0, 1000);
     lv_slider_set_mode(sliderWeight, LV_SLIDER_MODE_NORMAL);
-    lv_slider_set_orientation(sliderWeight, LV_SLIDER_ORIENTATION_HORIZONTAL);
+    lv_obj_set_style_pad_all(sliderWeight, 8, LV_PART_KNOB);
+    lv_obj_set_style_border_width(sliderWeight, 2, LV_PART_KNOB);
+    lv_obj_set_style_border_color(sliderWeight, lv_color_hex(0x404040), LV_PART_KNOB);
 
     labelWeight = lv_label_create(sliderCont);
     lv_label_set_text(labelWeight, "1000g");
@@ -169,53 +188,65 @@ void ScreenMain::init() {
     lv_obj_set_flex_flow(btnCont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btnCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(btnCont, 4, 0);
-    lv_obj_set_width(btnCont, 260);
+    lv_obj_set_width(btnCont, 300);
 
     btnReadRfid = lv_btn_create(btnCont);
-    lv_obj_set_size(btnReadRfid, 62, 46);
+    lv_obj_set_size(btnReadRfid, 72, 50);
     lv_obj_t* lRead = lv_label_create(btnReadRfid);
     lv_label_set_text(lRead, "READ");
     lv_obj_set_align(lRead, LV_ALIGN_CENTER);
     lv_obj_set_style_text_font(lRead, &lv_font_montserrat_14, 0);
 
     btnWrite = lv_btn_create(btnCont);
-    lv_obj_set_size(btnWrite, 62, 46);
+    lv_obj_set_size(btnWrite, 72, 50);
     lv_obj_t* lWrite = lv_label_create(btnWrite);
     lv_label_set_text(lWrite, "WRITE");
     lv_obj_set_align(lWrite, LV_ALIGN_CENTER);
     lv_obj_set_style_text_font(lWrite, &lv_font_montserrat_14, 0);
 
     btnLibrary = lv_btn_create(btnCont);
-    lv_obj_set_size(btnLibrary, 44, 46);
+    lv_obj_set_size(btnLibrary, 50, 50);
     lv_obj_t* lLib = lv_label_create(btnLibrary);
     lv_label_set_text(lLib, LV_SYMBOL_LIST);
     lv_obj_set_align(lLib, LV_ALIGN_CENTER);
 
     btnSettings = lv_btn_create(btnCont);
-    lv_obj_set_size(btnSettings, 44, 46);
+    lv_obj_set_size(btnSettings, 50, 50);
     lv_obj_t* lSet = lv_label_create(btnSettings);
     lv_label_set_text(lSet, LV_SYMBOL_SETTINGS);
     lv_obj_set_align(lSet, LV_ALIGN_CENTER);
 }
 
 void ScreenMain::show() {
-    lv_screen_load(screen);
+    lv_screen_load_anim(screen, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
 }
 
-void ScreenMain::setWriteStatus(const char* status) {
+void ScreenMain::setWriteStatus(const char* status, bool success, bool neutral) {
     lv_label_set_text(labelWriteStatus, status);
+    if (neutral) {
+        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x404040), 0);
+    } else if (success) {
+        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x008000), 0);
+    } else {
+        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xC80000), 0);
+    }
     lv_obj_invalidate(labelWriteStatus);
 }
 
 void ScreenMain::update(const SpoolData& data) {
+    const std::string& name = data.getDisplayName();
+    lv_label_set_text(labelName, name.empty() ? data.getType().c_str() : name.c_str());
+
     lv_dropdown_set_selected(ddBrand, find_dropdown_option_index(ddBrand, data.getBrand()));
     lv_dropdown_set_selected(ddType, find_dropdown_option_index(ddType, data.getType()));
 
     lv_obj_set_style_bg_color(colorBlock, lv_color_hex(data.getColorHex()), 0);
+    lv_obj_set_style_text_color(labelHexColor, contrasting_text_color(data.getColorHex()), 0);
     lv_label_set_text(labelHexColor, data.getColorName().c_str());
-    lv_slider_set_value(sliderWeight, data.getWeight(), LV_ANIM_ON);
+    lv_slider_set_value(sliderWeight, data.getWeight(), LV_ANIM_OFF);
     lv_label_set_text_fmt(labelWeight, "%dg", data.getWeight());
 
+    lv_obj_invalidate(labelName);
     lv_obj_invalidate(colorBlock);
     lv_obj_invalidate(labelHexColor);
     lv_obj_invalidate(labelWeight);

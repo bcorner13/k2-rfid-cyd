@@ -67,9 +67,16 @@ void my_touch_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     uint16_t touchX, touchY;
     bool touched = gfx.getTouch(&touchX, &touchY);
-    data->state = touched ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
-    data->point.x = (int16_t)touchX;
-    data->point.y = (int16_t)touchY;
+    if (touched) {
+        data->state = LV_INDEV_STATE_PR;
+        data->point.x = (int16_t)touchX;
+        data->point.y = (int16_t)touchY;
+    } else {
+        data->state = LV_INDEV_STATE_REL;
+        /* Keep previous point coordinates — LVGL needs the last valid
+           position for release events; reporting (0,0) causes sliders
+           and other drag widgets to jump to the origin on release. */
+    }
 }
 
 void lvgl_display_init()

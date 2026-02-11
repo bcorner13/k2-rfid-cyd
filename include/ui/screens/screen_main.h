@@ -6,7 +6,7 @@ public:
     void init();
     void show();
     void update(const class SpoolData& data);
-    void setWriteStatus(const char* status);
+    void setWriteStatus(const char* status, bool success = false, bool neutral = true);
 
     lv_obj_t* screen;
     lv_obj_t* btnSettings;
@@ -16,6 +16,7 @@ public:
     lv_obj_t* labelWriteStatus;
     lv_obj_t* sliderWeight;
     lv_obj_t* labelWeight;
+    lv_obj_t* labelName;
     lv_obj_t* ddBrand;
     lv_obj_t* ddType;
     lv_obj_t* colorBlock;     /* colored block, tap opens color picker */

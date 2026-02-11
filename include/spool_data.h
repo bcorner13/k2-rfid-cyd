@@ -37,6 +37,7 @@ struct SpoolData {
 
     // Constructor from FilamentProfile (for writing to tag)
     explicit SpoolData(const FilamentProfile& profile) {
+        _displayName = std::string(profile.name.c_str());
         _brandName = trim_copy(profile.brand.c_str());
         _materialType = trim_copy(profile.material_type.c_str());
         _materialColorNumeric = profile.color_hex;
@@ -99,8 +100,9 @@ struct SpoolData {
 
     // Getters
     std::string getRawData() const { return _spooldata; }
+    std::string getDisplayName() const { return _displayName; }
     std::string getType() const { return _materialType; }
-    std::string getBrand() const { return _brandName; } // Added brand getter
+    std::string getBrand() const { return _brandName; }
     std::string getColorName() const { return _materialColorString; }
     uint32_t getColorHex() const { return _materialColorNumeric; }
     uint32_t getWeight() const { return _materialWeight; }
@@ -155,6 +157,7 @@ struct SpoolData {
 
   private:
     std::string _spooldata = "";
+    std::string _displayName = "";
     std::string _materialBatch = "";
     std::string _materialDate = "";
     std::string _materialVendor = "";
