@@ -1,6 +1,5 @@
 #pragma once
 #include <lvgl.h>
-#include "../widgets/spool_widget.h"
 
 class ScreenMain {
 public:
@@ -16,8 +15,8 @@ public:
     lv_obj_t* labelWeight;
     lv_obj_t* ddBrand;
     lv_obj_t* ddType;
-    lv_obj_t* labelHexColor;
-    SpoolWidget spoolWidget;
+    lv_obj_t* colorBlock;     /* colored block/button, tap opens color picker */
+    lv_obj_t* labelHexColor;  /* hex/name label inside or beside colorBlock */
 };
 
 extern ScreenMain screenMain;

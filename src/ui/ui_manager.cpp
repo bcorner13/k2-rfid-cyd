@@ -65,10 +65,8 @@ void UIManager::event_handler(lv_event_t* e) {
                 // Success
             }
         }
-        else if (obj == ui.screenMain.spoolWidget.getContainer() ||
-                 obj == ui.screenMain.spoolWidget.getFilamentArc() ||
-                 obj == ui.screenMain.spoolWidget.getCore()) {
-            ui.showColorPicker();  // tap center or ring to pick color
+        else if (obj == ui.screenMain.colorBlock) {
+            ui.showColorPicker();  // tap color block to pick color
         }
         else if (obj == ui.screenSettings.btnUpdateDB) {
             network.updateFilamentDB();
@@ -117,9 +115,7 @@ void UIManager::showMainScreen() {
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenMain.spoolWidget.getContainer(), event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenMain.spoolWidget.getFilamentArc(), event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenMain.spoolWidget.getCore(), event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_ALL, NULL);
     screenMain.show();
 }
@@ -180,33 +176,37 @@ void UIManager::updateBattery(float voltage) {
 
 void UIManager::createColorPicker() {
     modalColorPicker = lv_obj_create(lv_display_get_layer_top(lv_display_get_default()));
-    lv_obj_set_size(modalColorPicker, 280, 200);
-    lv_obj_set_align(modalColorPicker, LV_ALIGN_CENTER); // Changed lv_obj_center
+    lv_obj_set_size(modalColorPicker, 360, 340);
+    lv_obj_set_align(modalColorPicker, LV_ALIGN_CENTER);
     lv_obj_add_flag(modalColorPicker, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_pad_all(modalColorPicker, 12, 0);
 
     lv_obj_t* title = lv_label_create(modalColorPicker);
     lv_label_set_text(title, "Select Color");
-    lv_obj_set_align(title, LV_ALIGN_TOP_MID); // Changed lv_obj_align
-    lv_obj_set_y(title, 5); // Set y offset
+    lv_obj_set_align(title, LV_ALIGN_TOP_MID);
+    lv_obj_set_y(title, 4);
 
     lv_obj_t* btnClose = lv_btn_create(modalColorPicker);
-    lv_obj_set_size(btnClose, 30, 30);
-    lv_obj_set_align(btnClose, LV_ALIGN_TOP_RIGHT); // Changed lv_obj_align
-    lv_obj_set_x(btnClose, 0); // Set x offset
-    lv_obj_set_y(btnClose, 0); // Set y offset
+    lv_obj_set_size(btnClose, 56, 56);
+    lv_obj_set_align(btnClose, LV_ALIGN_TOP_RIGHT);
+    lv_obj_set_x(btnClose, -4);
+    lv_obj_set_y(btnClose, 0);
     lv_obj_t* lClose = lv_label_create(btnClose);
     lv_label_set_text(lClose, "X");
-    lv_obj_set_align(lClose, LV_ALIGN_CENTER); // Changed lv_obj_center
+    lv_obj_set_align(lClose, LV_ALIGN_CENTER);
+    lv_obj_set_style_text_font(lClose, &lv_font_montserrat_24, 0);
     lv_obj_add_event_cb(btnClose, [](lv_event_t* e){ ui.closeColorPicker(); }, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* grid = lv_obj_create(modalColorPicker);
-    lv_obj_set_size(grid, 260, 150);
-    lv_obj_set_align(grid, LV_ALIGN_BOTTOM_MID); // Changed lv_obj_align
-    lv_obj_set_y(grid, -5); // Set y offset
+    lv_obj_set_size(grid, 320, 260);
+    lv_obj_set_align(grid, LV_ALIGN_BOTTOM_MID);
+    lv_obj_set_y(grid, -8);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
+    lv_obj_set_style_pad_row(grid, 6, 0);
+    lv_obj_set_style_pad_column(grid, 6, 0);
 
-    static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t col_dsc[] = {56, 56, 56, 56, 56, LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t row_dsc[] = {56, 56, 56, 56, 56, LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
 
     uint32_t colors[] = {
@@ -219,18 +219,16 @@ void UIManager::createColorPicker() {
 
     for(int i=0; i<25; i++) {
         lv_obj_t* btn = lv_btn_create(grid);
-        lv_obj_set_size(btn, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_size(btn, 56, 56);
         lv_obj_set_style_bg_color(btn, lv_color_hex(colors[i]), 0);
-        lv_obj_set_grid_cell(btn, LV_GRID_ALIGN_STRETCH, i%5, 1, LV_GRID_ALIGN_STRETCH, i/5, 1);
+        lv_obj_set_style_radius(btn, 6, 0);
+        lv_obj_set_style_pad_all(btn, 0, 0);
+        lv_obj_set_grid_cell(btn, LV_GRID_ALIGN_CENTER, i%5, 1, LV_GRID_ALIGN_CENTER, i/5, 1);
 
         lv_obj_add_event_cb(btn, [](lv_event_t* e){
-            lv_color_t c =
-                lv_obj_get_style_bg_color(
-                    (lv_obj_t*) lv_event_get_target(e),
-                    LV_PART_MAIN
-                );
+            lv_obj_t* t = (lv_obj_t*)lv_event_get_target(e);
+            lv_color_t c = lv_obj_get_style_bg_color(t, LV_PART_MAIN);
             lv_color32_t c32 = lv_color_to_32(c, LV_OPA_COVER);
-
             uint32_t hex =
                 ((uint32_t)c32.red   << 16) |
                 ((uint32_t)c32.green << 8)  |
