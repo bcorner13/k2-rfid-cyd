@@ -60,9 +60,20 @@ void UIManager::event_handler(lv_event_t* e) {
         else if (obj == ui.screenSettings.btnAbout) ui.showAboutScreen();
         else if (obj == ui.screenAbout.btnBack) ui.showSettingsScreen();
 
+        else if (obj == ui.screenMain.btnReadRfid) {
+            SpoolData readSpool;
+            if (rfid.readCFSTag(readSpool)) {
+                ui.updateDashboardFromSpool(readSpool);
+                ui.screenMain.setWriteStatus("Read OK");
+            } else {
+                ui.screenMain.setWriteStatus("No tag / Read failed");
+            }
+        }
         else if (obj == ui.screenMain.btnWrite) {
             if (rfid.writeCFSTag(ui.currentSpool)) {
-                // Success
+                ui.screenMain.setWriteStatus("Write OK");
+            } else {
+                ui.screenMain.setWriteStatus("Write failed");
             }
         }
         else if (obj == ui.screenMain.colorBlock) {
@@ -109,12 +120,13 @@ void UIManager::event_handler(lv_event_t* e) {
 }
 
 void UIManager::showMainScreen() {
-    // Update the main screen with the current spool data before showing it
     updateDashboardFromSpool(currentSpool);
+    screenMain.setWriteStatus("Ready");
 
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(screenMain.btnReadRfid, event_handler, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_ALL, NULL);
     screenMain.show();

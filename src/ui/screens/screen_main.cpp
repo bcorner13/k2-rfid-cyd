@@ -55,19 +55,33 @@ void ScreenMain::init() {
     lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
 
-    // --- Main container: single column, no left panel / no spool widget ---
-    lv_obj_t* mainContainer = lv_obj_create(screen);
-    lv_obj_set_size(mainContainer, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_align(mainContainer, LV_ALIGN_CENTER);
-    lv_obj_set_style_border_width(mainContainer, 0, 0);
-    lv_obj_set_style_bg_opa(mainContainer, 0, 0);
-    lv_obj_set_flex_flow(mainContainer, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(mainContainer, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(mainContainer, 24, 0);
+    /* --- Grid: content row | grey line | bottom buttons (left/right/bottom = 3 regions) --- */
+    static lv_coord_t row_dsc[] = {LV_GRID_FR(1), 4, 100, LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t col_dsc[] = {LV_GRID_FR(1), 4, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    lv_obj_set_layout(screen, LV_LAYOUT_GRID);
+    lv_obj_set_grid_dsc_array(screen, col_dsc, row_dsc);
+    lv_obj_set_style_pad_all(screen, 0, 0);
+    lv_obj_set_style_pad_row(screen, 0, 0);
+    lv_obj_set_style_pad_column(screen, 0, 0);
 
-    // Color block: tap to open color picker (container so color isn't overridden by btn theme)
-    colorBlock = lv_obj_create(mainContainer);
-    lv_obj_set_size(colorBlock, 140, 80);
+    /* --- Grey horizontal line above buttons --- */
+    lv_obj_t* lineH = lv_obj_create(screen);
+    lv_obj_set_size(lineH, LV_PCT(100), 4);
+    lv_obj_set_style_bg_color(lineH, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_border_width(lineH, 0, 0);
+    lv_obj_set_style_radius(lineH, 0, 0);
+    lv_obj_set_grid_cell(lineH, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 1, 1);
+
+    /* --- Left area: color block (tap opens color picker) --- */
+    lv_obj_t* leftPanel = lv_obj_create(screen);
+    lv_obj_set_style_bg_opa(leftPanel, 0, 0);
+    lv_obj_set_style_border_width(leftPanel, 0, 0);
+    lv_obj_set_grid_cell(leftPanel, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_flex_flow(leftPanel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(leftPanel, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    colorBlock = lv_obj_create(leftPanel);
+    lv_obj_set_size(colorBlock, 200, 160);
     lv_obj_set_style_bg_color(colorBlock, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_border_width(colorBlock, 2, 0);
     lv_obj_set_style_border_color(colorBlock, lv_color_hex(0x404040), 0);
@@ -76,29 +90,44 @@ void ScreenMain::init() {
 
     labelHexColor = lv_label_create(colorBlock);
     lv_label_set_text(labelHexColor, "#FFFFFF");
-    lv_obj_set_style_text_font(labelHexColor, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(labelHexColor, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(labelHexColor, lv_color_black(), 0);
     lv_obj_set_align(labelHexColor, LV_ALIGN_CENTER);
 
-    // Dropdowns: options from material_database.json (unique brands and material types)
-    ddBrand = lv_dropdown_create(mainContainer);
+    /* --- Vertical grey divider (content area only, not bottom) --- */
+    lv_obj_t* lineV = lv_obj_create(screen);
+    lv_obj_set_size(lineV, 4, LV_PCT(100));
+    lv_obj_set_style_bg_color(lineV, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_border_width(lineV, 0, 0);
+    lv_obj_set_style_radius(lineV, 0, 0);
+    lv_obj_set_grid_cell(lineV, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+
+    /* --- Right area: brand, type, volume --- */
+    lv_obj_t* rightPanel = lv_obj_create(screen);
+    lv_obj_set_style_bg_opa(rightPanel, 0, 0);
+    lv_obj_set_style_border_width(rightPanel, 0, 0);
+    lv_obj_set_grid_cell(rightPanel, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_flex_flow(rightPanel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(rightPanel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(rightPanel, 20, 0);
+
+    ddBrand = lv_dropdown_create(rightPanel);
     {
         String opts = filamentDB.getBrandOptionsForDropdown();
         lv_dropdown_set_options(ddBrand, opts.isEmpty() ? "Generic" : opts.c_str());
     }
-    lv_obj_set_width(ddBrand, 300);
+    lv_obj_set_width(ddBrand, LV_PCT(100));
     lv_obj_set_style_text_font(ddBrand, &lv_font_montserrat_20, 0);
 
-    ddType = lv_dropdown_create(mainContainer);
+    ddType = lv_dropdown_create(rightPanel);
     {
         String opts = filamentDB.getMaterialTypeOptionsForDropdown();
         lv_dropdown_set_options(ddType, opts.isEmpty() ? "PLA" : opts.c_str());
     }
-    lv_obj_set_width(ddType, 300);
+    lv_obj_set_width(ddType, LV_PCT(100));
     lv_obj_set_style_text_font(ddType, &lv_font_montserrat_20, 0);
 
-    // Weight slider: wide and tall for easier use (no slider on left or in button row)
-    lv_obj_t* sliderCont = lv_obj_create(mainContainer);
+    lv_obj_t* sliderCont = lv_obj_create(rightPanel);
     lv_obj_set_width(sliderCont, LV_PCT(100));
     lv_obj_set_height(sliderCont, 56);
     lv_obj_set_style_bg_opa(sliderCont, 0, 0);
@@ -120,35 +149,62 @@ void ScreenMain::init() {
     lv_obj_set_style_text_font(labelWeight, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(labelWeight, lv_color_black(), 0);
 
-    // Buttons row only (no slider here)
-    lv_obj_t* btnCont = lv_obj_create(mainContainer);
-    lv_obj_set_size(btnCont, 400, 80);
+    /* --- Bottom region: status + Read, Write, Library, Settings (all visible) --- */
+    lv_obj_t* bottomArea = lv_obj_create(screen);
+    lv_obj_set_style_bg_color(bottomArea, lv_color_hex(0xE8E8E8), 0);
+    lv_obj_set_style_border_width(bottomArea, 0, 0);
+    lv_obj_set_grid_cell(bottomArea, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 2, 1);
+    lv_obj_set_flex_flow(bottomArea, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(bottomArea, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(bottomArea, 8, 0);
+
+    labelWriteStatus = lv_label_create(bottomArea);
+    lv_label_set_text(labelWriteStatus, "Ready");
+    lv_obj_set_style_text_font(labelWriteStatus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x404040), 0);
+
+    lv_obj_t* btnCont = lv_obj_create(bottomArea);
     lv_obj_set_style_bg_opa(btnCont, 0, 0);
     lv_obj_set_style_border_width(btnCont, 0, 0);
     lv_obj_set_flex_flow(btnCont, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(btnCont, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(btnCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(btnCont, 4, 0);
+    lv_obj_set_width(btnCont, 260);
+
+    btnReadRfid = lv_btn_create(btnCont);
+    lv_obj_set_size(btnReadRfid, 62, 46);
+    lv_obj_t* lRead = lv_label_create(btnReadRfid);
+    lv_label_set_text(lRead, "READ");
+    lv_obj_set_align(lRead, LV_ALIGN_CENTER);
+    lv_obj_set_style_text_font(lRead, &lv_font_montserrat_14, 0);
 
     btnWrite = lv_btn_create(btnCont);
-    lv_obj_set_size(btnWrite, 120, 60);
+    lv_obj_set_size(btnWrite, 62, 46);
     lv_obj_t* lWrite = lv_label_create(btnWrite);
     lv_label_set_text(lWrite, "WRITE");
-    lv_obj_set_align(lWrite, LV_ALIGN_CENTER); // Changed from lv_obj_center
+    lv_obj_set_align(lWrite, LV_ALIGN_CENTER);
+    lv_obj_set_style_text_font(lWrite, &lv_font_montserrat_14, 0);
 
     btnLibrary = lv_btn_create(btnCont);
-    lv_obj_set_size(btnLibrary, 60, 60);
+    lv_obj_set_size(btnLibrary, 44, 46);
     lv_obj_t* lLib = lv_label_create(btnLibrary);
     lv_label_set_text(lLib, LV_SYMBOL_LIST);
-    lv_obj_set_align(lLib, LV_ALIGN_CENTER); // Changed from lv_obj_center
+    lv_obj_set_align(lLib, LV_ALIGN_CENTER);
 
     btnSettings = lv_btn_create(btnCont);
-    lv_obj_set_size(btnSettings, 60, 60);
+    lv_obj_set_size(btnSettings, 44, 46);
     lv_obj_t* lSet = lv_label_create(btnSettings);
     lv_label_set_text(lSet, LV_SYMBOL_SETTINGS);
-    lv_obj_set_align(lSet, LV_ALIGN_CENTER); // Changed from lv_obj_center
+    lv_obj_set_align(lSet, LV_ALIGN_CENTER);
 }
 
 void ScreenMain::show() {
-    lv_screen_load(screen); // Changed from lv_scr_load
+    lv_screen_load(screen);
+}
+
+void ScreenMain::setWriteStatus(const char* status) {
+    lv_label_set_text(labelWriteStatus, status);
+    lv_obj_invalidate(labelWriteStatus);
 }
 
 void ScreenMain::update(const SpoolData& data) {
