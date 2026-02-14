@@ -1,2 +1,9 @@
 .pio
 .cursor
+.DS_Store
+.claude
+*.bin
+*.elf
+*.hex
+.idea/
+.vscode/
