@@ -50,6 +50,34 @@ WiFi, RFID, and sound init are currently commented out pending hardware verifica
 ### Global instances
 `filamentDB`, `rfid`, `ui`, `config`, `sysState`, `network` — declared as extern globals, instantiated in their respective .cpp files.
 
+## Data Formats
+
+### Material database (`data/material_database.json` → LittleFS `/material_database.json`)
+JSON with `result.list[]` array. Each entry has `base.{id, brand, name, meterialType, colors[]}` and `kvParam.{nozzle_temperature, hot_plate_temp}`. Note: upstream field is `meterialType` (typo). Parsed by `FilamentDB` with ArduinoJson v7 into `std::vector<FilamentProfile>` cache.
+
+### CFS tag payload (SpoolData string)
+Fixed-length ASCII string (34+ chars) written to MIFARE Classic 1K via PN532:
+
+| Pos | Len | Field |
+|-----|-----|-------|
+| 0-4 | 5 | Date code |
+| 5-8 | 4 | Vendor ID (`0276` = Creality) |
+| 9-10 | 2 | Batch |
+| 11 | 1 | Separator (`1`) |
+| 12-16 | 5 | Material type, space-padded |
+| 17 | 1 | Color prefix (`0`) |
+| 18-23 | 6 | Color hex RGB |
+| 24-27 | 4 | Length in mm (weight conversion: `len = 330 * weight_g / 1000`) |
+| 28-33 | 6 | Serial number |
+
+Entire string uppercased. Brand and filament name are **not stored** on tag. `SpoolData` in `include/spool_data.h` handles both construction paths (from `FilamentProfile` for writes, from raw string for reads).
+
+### RFID sector layout (MIFARE Classic 1K)
+Sectors 0-15, 4 blocks/sector, 16 bytes/block. Key A derived from UID. Sectors 1-4 immutable (magic, identity, color, vendor), sector 5 write-once (initial weight), sectors 6-8 mutable mirrors (remaining filament), sector 9 usage counters, sector 15 CRC32. Full spec: `docs/rfid/creality-k2plus-rfid-spec.md`.
+
+### App config (`config.json` on LittleFS)
+JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
+
 ## Key Conventions
 
 - Headers in `include/`, implementations in `src/` (mirrored directory structure including `ui/screens/` and `ui/widgets/`)
