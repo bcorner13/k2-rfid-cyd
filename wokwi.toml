@@ -1,7 +1,0 @@
-[wokwi]
-version = 1
-firmware = ".pio/build/waveshare_s3_43/firmware.bin"
-elf = ".pio/build/waveshare_s3_43/firmware.elf"
-
-[simulation]
-speed = 1.0
