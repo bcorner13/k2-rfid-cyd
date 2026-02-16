@@ -1872,7 +1872,64 @@ Since we cannot encrypt or authenticate the transport, we validate the response 
 
 ---
 
-## 15. Future Extensions
+## 15. Implementation Phasing
+
+Features are prioritized into three tiers: **P0** (must-have for data integrity — implement first), **P1** (core functionality — implement after P0), and **P2** (refinement — implement as time allows).
+
+### 15.1 P0 — Data Integrity & Safety
+
+These features protect against data loss and corruption. They must be implemented before any inventory or tag-write functionality ships.
+
+| # | Feature | FSD Section | Depends On | Deliverable |
+|---|---------|-------------|------------|-------------|
+| P0.1 | **Inventory atomic save** | 6.9 | LittleFS | `write .tmp → fsync → remove old → rename` pattern in `InventoryManager::save()` |
+| P0.2 | **CRC-32 definition** | 7.6 | rfid_driver | `computeCRC32()` using IEEE 802.3 polynomial; validate on read, recompute on write |
+| P0.3 | **Mirror voting** | 7.8 | P0.2 | `readMirrors()` with 3-way comparison, majority selection, disagreement logging |
+| P0.4 | **Database max size guard** | 14.2 | network_manager | `Content-Length` check (512 KB max) before download; reject oversized responses |
+| P0.5 | **ERROR state semantics** | 12.4 | system_state, ui_manager | Error dialog with per-error timeout table, retry/dismiss behavior, `USER_RETRY`/`USER_DISMISS` events |
+| P0.6 | **Tag ↔ inventory reconciliation** | 6.7 | P0.3, inventory_manager | Weight comparison on scan (±5g tolerance), prompt on mismatch, user chooses tag vs inventory value |
+| P0.7 | **Unknown/foreign v2 tag handling** | 7.5 (origin detection) | P0.2, rfid_driver | Check origin magic (`0x4B324658`); refuse to overwrite sectors 10-13 on foreign tags; warn user |
+
+**Implementation order:** P0.1 → P0.2 → P0.3 → P0.4 → P0.5 → P0.6 → P0.7
+
+Rationale: Atomic save (P0.1) is standalone and protects all subsequent features. CRC (P0.2) and mirrors (P0.3) are prerequisites for tag reconciliation (P0.6) and foreign tag detection (P0.7). Error semantics (P0.5) provides the dialog framework used by reconciliation and foreign tag warnings.
+
+### 15.2 P1 — Core Functionality
+
+These deliver the primary user-facing features. Implement after P0 is solid.
+
+| # | Feature | FSD Section | Depends On |
+|---|---------|-------------|------------|
+| P1.1 | **TagData struct & data model separation** | 3.2, 7.9 | P0.2, P0.3 |
+| P1.2 | **Inventory manager** (CRUD, persistence) | 6.1–6.6 | P0.1, P1.1 |
+| P1.3 | **Inventory screen** (list/grid, scan, filter) | 11.4 | P1.2 |
+| P1.4 | **Spool detail screen** (view/edit weight, history) | 11.5 | P1.2 |
+| P1.5 | **Custom spool entry** (multi-step form) | 11.6 | P1.2 |
+| P1.6 | **Extended tag write** (v2 sectors 10-13) | 7.5 | P0.7, P1.1 |
+| P1.7 | **UID collision handling** | 6.8 | P1.2 |
+| P1.8 | **Archive vs delete** | 6.10 | P1.2 |
+| P1.9 | **Operation lock & UI guards** | 12.5 | P0.5 |
+| P1.10 | **Database update flow** (SHA-256 hash, schema validation) | 5.6 | P0.4 |
+| P1.11 | **Feedback module** (buzzer + LEDs) | 9 | CH422G driver |
+
+### 15.3 P2 — Refinement
+
+Polish and resilience. Implement as time allows; system is functional without these.
+
+| # | Feature | FSD Section | Depends On |
+|---|---------|-------------|------------|
+| P2.1 | I2C bus recovery (SCL pulse, PN532/CH422G reset) | 13.7 | rfid_driver, CH422G |
+| P2.2 | PSRAM allocation failure handling | 14.3 | — |
+| P2.3 | SD card backup & usage logging (CSV) | 5.7, 5.9 | sd_manager |
+| P2.4 | Network security hardening (validation checks) | 14.5 | P1.10 |
+| P2.5 | Memory budget monitoring (runtime heap logging) | 14.1 | — |
+| P2.6 | String length enforcement (truncation on parse/display) | 14.2 | — |
+| P2.7 | Battery monitoring & low-battery state | 16 (Future) | CH422G ADC |
+| P2.8 | Save atomicity for config.json | — | P0.1 pattern |
+
+---
+
+## 16. Future Extensions
 
 - **Battery operation:** Portable use via 18650 / 3.7V LiPo cell connected to BAT1. The Waveshare 4.3C has full on-board charging and boost circuitry (CS8501). Software support needed:
   - Battery voltage monitoring via EXIO_ADC (CH422G analog input, voltage divider R18/R19)
@@ -1895,7 +1952,7 @@ Since we cannot encrypt or authenticate the transport, we validate the response 
 
 ---
 
-## 16. Non-Goals (Current Phase)
+## 17. Non-Goals (Current Phase)
 
 - Printer motion control
 - G-code generation
@@ -1905,8 +1962,10 @@ Since we cannot encrypt or authenticate the transport, we validate the response 
 
 ---
 
-## 17. Status
+## 18. Status
 
-**Document Status:** Draft (v2.1)
+**Document Status:** Draft (v2.2)
 
 This FSD reflects the planned architecture for the filament inventory management system, extending the original RFID read/write tool with spool cataloging, usage tracking, custom spool creation, dual-storage architecture (LittleFS + SD card), and manual filament database updates from Creality printers via HTTP.
+
+v2.2 adds implementation phasing (Section 15), formal hard limits for all string/numeric fields (Section 14.2), TagData struct and data model separation (Sections 3.2, 7.9), and I2C bus recovery procedures (Section 13.7).
