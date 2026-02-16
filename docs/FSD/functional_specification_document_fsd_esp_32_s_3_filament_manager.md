@@ -12,7 +12,10 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 ## 2. System Overview
 
 ### 2.1 Hardware Platform
- **Waveshare ESP32-S3 Touch LCD 4.3" (4.3C variant — AI Voice model)**
+
+  **Waveshare ESP32-S3 Touch LCD 4.3" — Development Board (4.3)**
+
+  > **Board variant note:** This project targets the **development board** (ESP32-S3-LCD-4.3), which has RS-485, CAN bus, and a USB host switch but **no audio subsystem, no RTC, and no optocoupler-isolated I/O**. A production/4.3C variant (AI Voice model with audio, RTC, optocouplers) exists but is not the target hardware. See the comparison table at the end of this section for differences. Schematics: `docs/ESP32-S3-Touch-LCD-4.3-Sch.pdf` (dev), `docs/production board/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf` (production).
 
   **MCU**
 
@@ -27,96 +30,88 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   - Driven by **LovyanGFX** via LGFX_Config.h
   - Pixel clock: 12 MHz (lowered from default to reduce jitter)
   - Data pins: D0–D15 on specific GPIOs; HSYNC=GPIO46, VSYNC=GPIO3, PCLK=GPIO7, HENABLE=GPIO5
+  - Backlight driver: **MP3302DJ-LF-Z** LED driver, controlled by **DISP** signal (EXIO2 via CH422G)
 
   **Touch**
 
   - **GT911** capacitive touch controller
   - I2C address 0x5D on shared bus (GPIO8=SDA, GPIO9=SCL, GPIO4=IRQ)
+  - Reset via **EXIO1** (CTP_RST) on CH422G
 
   **I2C Expander**
 
   - **CH422G (U10)** — I2C I/O expander on same bus (GPIO8/9)
   - Uses fixed 8-bit command addresses (not standard 7-bit I2C addressing): 0x70 (OC output), 0x38 (push-pull output), 0x48 (set mode), 0x4D (read input)
+  - Provides 8 bidirectional I/O pins (IO0-IO7 = EXIO0-EXIO7) and **4 general-purpose output pins (OC0-OC3)** — push-pull or open-drain selectable
 
-  **CH422G EXIO Pin Assignments (from schematic):**
+  **CH422G EXIO Pin Assignments (development board):**
 
   | EXIO Pin | Net Name | Function |
   |----------|----------|----------|
-  | EXIO0 | DI0 | Digital input 0 (via optocoupler T5) |
+  | EXIO0 | — | Unused / available |
   | EXIO1 | CTP_RST | Touch reset — pulse LOW→HIGH on boot |
-  | EXIO2 | DISP | Display enable |
-  | EXIO3 | PA_CTRL | NS4150B speaker amplifier enable |
+  | EXIO2 | DISP | Display enable (backlight on/off via MP3302DJ) |
+  | EXIO3 | LCD_RST | LCD panel reset |
   | EXIO4 | SDCS | SD card chip select |
-  | EXIO5 | DI1 | Digital input 1 (via optocoupler T6) |
-  | EXIO6 | DOUT0/DO0 | Digital output 0 (via optocoupler T1) |
-  | EXIO7 | DOUT1/DO1 | Digital output 1 (via optocoupler T3) |
-  | EXIO_PWM | Backlight | LCD backlight brightness (PWM via AP3032 boost driver) |
-  | EXIO_ADC | VBAT sense | Battery voltage divider (R18 20K / R19 10K) |
+  | EXIO5 | USB_SEL | USB host switch (FSUSB42UMX) — selects USB-JTAG vs USB host |
 
-  **Audio (4.3C-specific)**
+  **CH422G OC Output Pins (development board):**
 
-  The 4.3C is the AI Voice variant and includes a complete audio subsystem. Not currently used by the filament manager, but documented here for completeness.
+  The CH422G has 4 additional output-only pins (OC0-OC3) that are separate from the 8 EXIO bidirectional pins. These can be push-pull or open-drain (selectable via set-mode command). On the dev board, OC0-OC3 are available for general-purpose output — used for feedback hardware (buzzer/LEDs).
 
-  - **ES8311** audio codec — I2S DAC (speaker playback) + ADC (line in), I2C address **0x18** (CE=LOW)
-  - **ES7210** ADC with echo cancellation — 4-channel mic ADC, I2C address **0x40** (AD0=0, AD1=0)
-  - **NS4150B** (U13) — Class D mono power amplifier, enabled via **EXIO3** (CH422G)
-  - **Dual MEMS microphones** (MIC1, MIC2) — connected to ES7210 MIC1P/N and MIC2P/N, powered by MICBIAS12
-  - **Speaker header** (H4) — 2-pin, driven by NS4150B PA output
+  | OC Pin | CH422G Physical Pin | Available | Notes |
+  |--------|-------------------|-----------|-------|
+  | OC0 | Pin 8 | Yes | General-purpose output |
+  | OC1 | Pin 9 | Yes | General-purpose output |
+  | OC2 | Pin 10 | Yes | General-purpose output |
+  | OC3 | Pin 11 | Yes | General-purpose output |
 
-  **Audio Pin Mapping (I2S bus):**
+  **RS-485 Interface (development board only)**
 
-  | Signal | GPIO | Direction | Connects To |
-  |--------|------|-----------|-------------|
-  | I2S_MCLK | IO6 | ESP32 → Codec | ES8311 pin 2 (MCLK), ES7210 pin 5 (MCLK) |
-  | I2S_SCLK | IO44 | ESP32 → Codec | ES8311 pin 6 (SCLK), ES7210 pin 9 (SCLK) |
-  | I2S_LRCK | IO16 | ESP32 → Codec | ES8311 pin 8 (LRCK), ES7210 pin 10 (LRCK) |
-  | I2S_DSDIN | IO15 | ESP32 → ES8311 | ES8311 pin 9 (DAC data input for playback) |
-  | I2S_ASDOUT | IO43 | Codec → ESP32 | ES8311 pin 7 + ES7210 pin 11 via R70 51Ω (ADC capture data) |
-  | PA_CTRL | EXIO3 | CH422G → NS4150B | U13 pin 1 (amplifier enable) |
+  - **SP3485** RS-485 transceiver (U7) with 120Ω termination
+  - **IO15** = RS485_TXD (Driver Input)
+  - **IO16** = RS485_RXD (Receiver Output)
+  - Terminal connector (J2): RS485_TX+, RS485_TX−, GND
+  - DE/RE control via pull resistors (always enabled)
+  - **Not used by this project.** IO15 and IO16 are available as GPIO when nothing is connected to the RS-485 terminal — the transceiver passes signals through harmlessly.
 
-  Audio I2C control shares the main I2C bus (IO8=SDA, IO9=SCL). Note: IO6 is shared with the display data bus (I2S_MCLK), requiring careful bus arbitration if both audio and display are active simultaneously.
+  **CAN Bus Interface (development board only)**
 
-  **RTC**
+  - **TJA1051T/3/1J** CAN transceiver (U12)
+  - Terminal connector (J4): CANH, CANL, 3V3
+  - SM24CANB-02HTG TVS protection
+  - **Not used by this project.**
 
-  - **PCF85063ATL (U3)** — real-time clock on shared I2C bus, address **0x51**
-  - 32.768 kHz crystal (Y1)
-  - Interrupt output (RTC_INT) → **EXIO_RESET** on CH422G (active-low)
-  - Battery-backed via VBAT through Schottky diodes (D15, D16)
-  - Provides timestamps for inventory weight history and spool creation dates
+  **USB Host Switch (development board only)**
+
+  - **FSUSB42UMX** (U13) — USB 2.0 mux, controlled by **EXIO5** (USB_SEL)
+  - Selects between USB-JTAG (native) and USB host mode
+  - **Not used by this project** — EXIO5 left at default.
 
   **SD Card**
 
   - Micro SD card slot (SD1) — SPI interface, FAT32 formatted
   - **IO11** = MOSI, **IO12** = SCK, **IO13** = MISO
-  - Chip select: **EXIO4** (via CH422G, accent through R105 0R to IO10)
+  - Chip select: **EXIO4** (via CH422G, bridged through R105 0R to IO10)
   - 128 GB card installed; used for database backups, usage history logs, and data export (see Section 5.7)
 
   **RFID**
 
   - **PN532 NFC Module V3** (13.56 MHz) — MIFARE Classic 1K tags
   - Connected via **I2C** on the shared bus (IO8=SDA, IO9=SCL), I2C address **0x24**
-  - Powered from the board's I2C header (VCC, GND, SDA, SCL)
+  - Powered from the board's I2C header (H8: VCC, GND, SDA, SCL)
   - Supports standard CFS v1 tags and extended v2 tags (see Section 7)
 
-  **Digital I/O (optocoupler-isolated) — P1 Header**
+  **Available GPIO Pins**
 
-  - **DIN0** (EXIO0): Digital input via optocoupler T5 (PC814), active through R78 3.6K
-  - **DIN1** (EXIO5): Digital input via optocoupler T6 (PC814), active through R73 3.6K
-  - **DOUT0** (EXIO6): Digital output via optocoupler T1 (PC817), driven through R57 510Ω
-  - **DOUT1** (EXIO7): Digital output via optocoupler T3 (PC817), driven through R74 510Ω
-  - External I/O exposed on header P1 (bottom edge of board)
-  - Used for status feedback LEDs and buzzer (see Section 2.1 Feedback Hardware below)
+  The following pins are available for general-purpose use on the development board:
 
-  **Free GPIO Pins (I2S, unused)**
+  | GPIO | Board Function | Available For | Notes |
+  |------|---------------|---------------|-------|
+  | IO15 | RS485_TXD (via SP3485) | GPIO output | Safe when RS-485 terminal is disconnected. 3.3V output. |
+  | IO16 | RS485_RXD (via SP3485) | GPIO input/output | Safe when RS-485 terminal is disconnected. 3.3V output. |
 
-  The following I2S pins are available for general-purpose use since the audio codec is not initialized:
-
-  | GPIO | Original I2S Function | Available For | Notes |
-  |------|-----------------------|---------------|-------|
-  | IO15 | I2S_DSDIN (DAC data to ES8311) | General output | Connects to ES8311 pin 9 (high-Z when codec not initialized) |
-  | IO16 | I2S_LRCK (L/R clock) | General output | Connects to ES8311 pin 8 + ES7210 pin 10 |
-
-  > **Note:** IO43 and IO44 (I2S_ASDOUT / I2S_SCLK) are NOT available — they are used by UART0 (Serial TX/RX) for upload and monitoring. IO6 (I2S_MCLK) is routed near the RGB display data bus and should not be repurposed.
+  > **Note:** IO43 and IO44 are UART0 TX/RX — not available. IO6 is on the RGB display data bus — not available. All other GPIOs are consumed by the display parallel bus, SD card SPI, or I2C.
 
   **Feedback Hardware**
 
@@ -126,42 +121,42 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   - **Red LED:** Standard 5mm red LED for failure/error indication
   - **Green LED:** Standard 5mm green LED for success indication
 
-  **Wiring — Option A (recommended): P1 header digital outputs**
+  **Wiring — Option A (recommended): CH422G OC outputs**
 
-  Uses the optocoupler-isolated outputs on the P1 header. The optocouplers switch an external 5V supply, which correctly drives the 5V buzzer and provides clean LED power. All controlled via CH422G EXIO pins over I2C.
+  The CH422G OC0-OC3 pins provide 4 dedicated output pins controllable via I2C. Use push-pull mode for direct drive. These output VCC level (3.3V or 5V depending on CH422G VCC rail).
 
-  | Device | P1 Output | CH422G Pin | Wiring |
-  |--------|-----------|------------|--------|
-  | Buzzer (YMD-12095) | DOUT0 | EXIO6 | P1 DOUT0 → buzzer (+), P1 GND → buzzer (−). External 5V on P1 VCC. |
-  | Red LED | DOUT1 | EXIO7 | P1 DOUT1 → 220Ω resistor → red LED anode → P1 GND |
-  | Green LED | — | — | See note below |
+  | Device | OC Pin | Wiring |
+  |--------|--------|--------|
+  | Buzzer (YMD-12095) | OC0 | OC0 → buzzer (+), GND → buzzer (−). Note: buzzer needs 5V; if CH422G VCC is 3.3V, use OC0 in open-drain mode with external 5V pull-up, or use a MOSFET level shifter. |
+  | Red LED | OC1 | OC1 → 220Ω → red LED anode → GND |
+  | Green LED | OC2 | OC2 → 220Ω → green LED anode → GND |
 
-  > **Note on 3 outputs vs 2 DOUT pins:** The P1 header has only 2 digital outputs (DOUT0, DOUT1). For 3 devices (buzzer + 2 LEDs), options include:
-  > - Use DOUT0 for buzzer, DOUT1 for a **bicolor red/green LED** (single package, common cathode — color selected by polarity, but only one color at a time since it's one output)
-  > - Use DOUT0 for buzzer, DOUT1 for red LED, and **IO15 or IO16** (3.3V GPIO) for green LED (LEDs work fine at 3.3V)
-  > - Use a **single RGB/NeoPixel (WS2812) LED** on IO15 or IO16 — one pin, any color (requires NeoPixel library, ~800 bytes RAM)
+  **Wiring — Option B: Direct GPIO (IO15 / IO16) + one OC pin**
 
-  **Wiring — Option B: Direct GPIO (IO15 / IO16)**
+  Uses the RS-485 pins as GPIO (safe when RS-485 terminal disconnected) plus one CH422G OC pin for the 5V buzzer.
 
-  Simpler wiring but limited to 3.3V output. LEDs work fine at 3.3V with appropriate resistor. The 5V active buzzer may not trigger reliably at 3.3V — test before committing to this approach.
+  | Device | Pin | Wiring |
+  |--------|-----|--------|
+  | Green LED | IO15 | IO15 → 220Ω → green LED → GND (3.3V) |
+  | Red LED | IO16 | IO16 → 220Ω → red LED → GND (3.3V) |
+  | Buzzer | OC0 | OC0 → buzzer (+), GND → buzzer (−). External 5V pull-up if OC open-drain mode. |
 
-  | Device | GPIO | Wiring |
-  |--------|------|--------|
-  | Green LED | IO15 | IO15 → 220Ω → green LED → GND |
-  | Red LED | IO16 | IO16 → 220Ω → red LED → GND |
-  | Buzzer | DOUT0 (EXIO6) | Via P1 header with external 5V (buzzer needs 5V) |
+  > **Note:** A **single RGB NeoPixel (WS2812) LED** on IO15 or IO16 is also an option — one pin, any color (requires NeoPixel library, ~800 bytes RAM), eliminates the need for separate red/green LEDs.
 
   **Battery & Power**
 
-  - **CS8501 (U4)** — LiPo charger + DC-DC boost converter (charges single-cell LiPo/18650 via USB and boosts to 5V for system power)
-  - **BAT1** — battery connector for 3.7V LiPo / 18650 cell
-  - Battery voltage monitored via **EXIO_ADC** (voltage divider R18 20K / R19 10K → ~2.8V at full charge for ADC-safe reading)
-  - **SW1** — physical battery on/off switch
-  - **SY8293FCC (U1)** — main 5V buck regulator from VIN
-  - **TMI3112H (U8)** — 3.3V buck regulator from 5V
+  - **CS8501 (U2)** — LiPo charger + DC-DC boost converter (charges single-cell LiPo/18650 via USB and boosts to 5V for system power)
+  - **J5** — PH2.0 2P battery connector for 3.7V LiPo / 18650 cell
+  - Charge status LEDs: **CHG** (charging), **DONE** (complete), **PWR** (power on)
+  - **SGM2212-3.3XKC3G/TR (U8)** — 3.3V LDO regulator from 5V
   - Board draws ~550mA for display alone; total system draw estimated ~700-800mA (display + ESP32 active + PN532)
   - Battery charging occurs via USB-C when connected; CS8501 handles charge/discharge management natively
-  - **Note:** An external TP4056 charge/discharge step-up module (J5019) was evaluated but is **not required** — the on-board CS8501 provides equivalent functionality (LiPo charging + boost conversion). The external module would only be needed if a separate micro-USB charging input is desired for enclosure routing purposes.
+  - **Note:** An external TP4056 charge/discharge step-up module (J5019) was evaluated but is **not required** — the on-board CS8501 provides equivalent functionality.
+
+  **Buttons**
+
+  - **K1** — RESET button (pulls RESET low via R38 10K)
+  - **K2** — BOOT/IO0 button (pulls IO0 low for flash mode via R39 10K)
 
   **I2C Bus Summary (IO8=SDA, IO9=SCL)**
 
@@ -170,19 +165,26 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   | Device | I2C Address | Function |
   |--------|-------------|----------|
   | GT911 | 0x5D | Capacitive touch controller |
-  | CH422G (U10) | Fixed command bytes (0x70, 0x48, 0x4D, etc.) | I/O expander |
-  | PCF85063A (U3) | 0x51 | Real-time clock |
-  | ES8311 (U11) | 0x18 | Audio codec (DAC/ADC) |
-  | ES7210 (U12) | 0x40 | 4-ch mic ADC with echo cancellation |
+  | CH422G (U10) | Fixed command bytes (0x70, 0x48, 0x4D, etc.) | I/O expander (EXIO0-7 + OC0-3) |
   | PN532 (external) | 0x24 | NFC/RFID reader/writer |
 
-  > **Note:** The CH422G uses non-standard fixed command-byte addressing (8-bit: 0x48 for set-mode, 0x70 for OC write, 0x4D for read). The 7-bit equivalent of 0x48 is 0x24, which overlaps with the PN532 default address. In practice this has not caused bus conflicts because the CH422G command protocol differs from standard I2C register access, but if issues arise, the PN532 V3 module supports SPI mode as an alternative. For I2C bus lockup detection, timeout handling, and SCL pulse recovery procedures, see Section 13.7.
+  > **Note:** The dev board has only 3 I2C devices (vs 6 on production 4.3C). No RTC, no audio codecs. The CH422G address overlap note still applies: the 7-bit equivalent of command byte 0x48 is 0x24 (same as PN532). In practice this has not caused bus conflicts because the CH422G command protocol differs from standard I2C register access, but if issues arise, the PN532 V3 module supports SPI mode as an alternative. For I2C bus lockup detection, timeout handling, and SCL pulse recovery procedures, see Section 13.7.
+
+  **Timestamps (no RTC)**
+
+  The development board does **not** have an RTC. Timestamps for inventory weight history and spool creation dates require one of:
+  - **NTP via WiFi** — accurate when connected; unavailable offline
+  - **Relative uptime** — `millis()` since boot; resets on power cycle
+  - **Manual date entry** — user sets date/time in Settings screen on first boot; stored in config, drifts without RTC
+
+  For initial implementation, NTP is preferred when WiFi is available, with relative timestamps as fallback. Timestamp accuracy is non-critical — weight history entries are informational, not safety-critical.
 
   **USB**
 
-  - Two USB-C ports: **USB-JTAG** and **UART**
+  - Two USB-C ports: **USB-JTAG** (Type_C1) and **UART** (Type_C2, via CH343P USB-to-UART)
   - UART port used for upload/monitor (more stable)
   - `ARDUINO_USB_CDC_ON_BOOT=0` (CDC disabled, using hardware UART)
+  - USB host switch (FSUSB42UMX) on EXIO5 — not used
 
   **Connectivity**
 
@@ -192,7 +194,39 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   **Board Definition**
 
   - Custom PlatformIO board: boards/waveshare_s3_43.json
-  - Hardware docs: docs/board-variant-4.3C.md
+  - Waveshare wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4.3
+  - Development board schematic: `docs/ESP32-S3-Touch-LCD-4.3-Sch.pdf`
+  - Production board schematic: `docs/production board/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf`
+  - Chip datasheets: `docs/CH422DS1_EN.pdf`, `docs/GT911_EN_Datasheet.pdf`, `docs/ST7262.pdf`, `docs/TJA1051.pdf`, `docs/CH343DS1-en.pdf`
+  - Board variant notes: `docs/board-variant-4.3C.md`
+
+  **Development Board vs Production Board (4.3C) Comparison**
+
+  | Feature | Dev Board (4.3) | Production Board (4.3C) |
+  |---------|----------------|------------------------|
+  | **Audio subsystem** | None | ES8311 + ES7210 + NS4150B + dual MEMS mics |
+  | **RTC** | None | PCF85063ATL (I2C 0x51) |
+  | **RS-485** | SP3485 on IO15/IO16 | None |
+  | **CAN bus** | TJA1051T | None |
+  | **USB host switch** | FSUSB42UMX on EXIO5 | None |
+  | **Optocoupler I/O (P1)** | None | 2 inputs (DIN0/DIN1) + 2 outputs (DOUT0/DOUT1) |
+  | **EXIO3 function** | LCD_RST | PA_CTRL (speaker amp enable) |
+  | **EXIO5 function** | USB_SEL | DI1 (digital input) |
+  | **EXIO6 function** | Available / unassigned | DOUT0 (optocoupler output) |
+  | **EXIO7 function** | Available / unassigned | DOUT1 (optocoupler output) |
+  | **EXIO_PWM** | Not connected | Backlight PWM (AP3032 boost driver) |
+  | **EXIO_ADC** | Not connected | VBAT sense (voltage divider) |
+  | **IO15** | RS485_TXD | I2S_DSDIN (audio DAC data) |
+  | **IO16** | RS485_RXD | I2S_LRCK (audio L/R clock) |
+  | **Backlight driver** | MP3302DJ-LF-Z (DISP on/off) | AP3032 (EXIO_PWM brightness) |
+  | **3.3V regulator** | SGM2212-3.3 (U8) | TMI3112H (U8) |
+  | **USB-to-UART** | CH343P | CH343G (assumed) |
+  | **I2C devices** | 3 (GT911, CH422G, PN532) | 6 (+ PCF85063A, ES8311, ES7210) |
+  | **Sensor/AD input** | Yes (analog header) | No |
+  | **Physical buttons** | K1 (RESET), K2 (IO0/BOOT) | K1 (RESET), K2 (IO0/BOOT) |
+  | **Battery charger** | CS8501 (U2) | CS8501 (U4) |
+
+  > **Porting note:** The codebase and LGFX_Config.h work on both variants — the display bus, touch controller, CH422G init (EXIO1/EXIO2), and SD card are identical. Differences only affect feedback hardware wiring (no P1 header on dev), timestamps (no RTC on dev), and any code that references EXIO3/5/6/7 or audio codecs.
 
 ### 2.2 Software Stack
 - **Framework:** Arduino (ESP32 core)
@@ -432,7 +466,7 @@ GET http://{printer_ip}/info
 8. Raw JSON saved to SD card: `/material_database.json` (backup, overwrites previous)
 9. JSON gzip-compressed in memory, written to LittleFS: `/material_database.json.gz` (atomic: write temp file, rename)
 10. FilamentDB cache reloaded from the new data
-11. Update `config.json`: `db_hash`, `db_updated_at` (RTC timestamp), `db_profile_count`, `printer_model`, `db_schema_version`, `printer_ip`
+11. Update `config.json`: `db_hash`, `db_updated_at` (NTP timestamp or uptime), `db_profile_count`, `printer_model`, `db_schema_version`, `printer_ip`
 12. UI displays: success status, profile count, timestamp, and whether schema version changed
 
 **Error handling:**
@@ -755,7 +789,7 @@ Two distinct removal operations with different consequences:
 
 | Aspect | Behavior |
 |--------|----------|
-| **Action** | `archiveSpool(spool_id)` sets `status` to `"archived"`, sets `updated_at` to current RTC timestamp |
+| **Action** | `archiveSpool(spool_id)` sets `status` to `"archived"`, sets `updated_at` to current timestamp (NTP or uptime) |
 | **Inventory JSON** | Spool record **remains** in `/inventory.json` with `status: "archived"` |
 | **UID association** | `tag_uid` **retained** on the archived record. Excluded from active UID lookups but available for reactivation (see Section 6.8 "Archived spool rescanned"). |
 | **SD usage history** | Unchanged — all prior entries in `/logs/usage_YYYYMMDD.csv` preserved |
@@ -1091,7 +1125,7 @@ Provide immediate physical feedback when RFID operations complete. A buzzer soun
 - **Green LED:** 5mm green LED (success indicator)
 - **Red LED:** 5mm red LED (failure/error indicator)
 
-Wiring depends on chosen option (see Section 2.1 Feedback Hardware). Recommended: buzzer on DOUT0 (EXIO6), LEDs on IO15/IO16 or DOUT1 (EXIO7).
+Wiring depends on chosen option (see Section 2.1 Feedback Hardware). Recommended: buzzer on CH422G OC0, LEDs on OC1/OC2 or IO15/IO16.
 
 ### 9.3 Feedback Module (`src/feedback.cpp`)
 
@@ -1132,8 +1166,8 @@ public:
 ### 9.6 Implementation Notes
 
 - **Non-blocking:** `feedback.success()` and `feedback.failure()` set outputs and record a timestamp. `feedback.update()` (called from `loop()`) turns outputs off after the pattern duration expires. No `delay()` calls.
-- **CH422G access:** If using DOUT0/DOUT1, the CH422G expander must remain initialized across the application lifecycle (currently it's a local variable in `init_ch422g_4_3c()`). The expander instance should be promoted to a global or managed by a shared driver.
-- **Active buzzer at 5V:** The YMD-12095 is rated for 5V DC. If connected via DOUT0 (optocoupler), the P1 header's external supply provides 5V. If connected directly to an ESP32 GPIO (3.3V), the buzzer may sound at reduced volume or not trigger — test before committing.
+- **CH422G access:** If using OC0-OC3 outputs, the CH422G expander must remain initialized across the application lifecycle (currently it's a local variable in `init_ch422g_4_3c()`). The expander instance should be promoted to a global or managed by a shared driver. OC output is controlled via I2C command byte 0x70.
+- **Active buzzer at 5V:** The YMD-12095 is rated for 5V DC. If connected via CH422G OC pin in open-drain mode with external 5V pull-up, the buzzer gets full voltage. If connected directly to an ESP32 GPIO (3.3V), the buzzer may sound at reduced volume or not trigger — test before committing.
 - **GPIO LED drive:** ESP32-S3 GPIOs can source ~40mA. A standard 5mm LED with 220Ω resistor draws ~10mA at 3.3V — well within limits.
 
 ---
@@ -1360,7 +1394,7 @@ WiFi Setup → Settings             (connected / cancelled)
 | Restart Device | Button | Calls `ESP.restart()` — immediate reboot, no confirmation dialog |
 
 **Future additions:**
-- Brightness slider (controls backlight via EXIO_PWM)
+- Brightness slider (dev board: on/off only via EXIO2/DISP; 4.3C: PWM dimming via EXIO_PWM)
 - Printer IP display/edit (currently only editable via Update Database screen or WiFi captive portal)
 - Battery status indicator (when battery operation is implemented)
 
@@ -1644,7 +1678,7 @@ sysState.transition(SystemEvent::WRITE_REQUEST);
 
 ### 13.7 I2C Bus Recovery
 
-The shared I2C bus (IO8=SDA, IO9=SCL) connects 6 devices (GT911 touch, CH422G expander, PCF85063A RTC, ES8311 codec, ES7210 ADC, PN532 RFID). Bus lockups can occur when a device holds SDA low after an interrupted transaction — a common embedded I2C failure mode.
+The shared I2C bus (IO8=SDA, IO9=SCL) connects multiple devices (dev board: GT911 touch, CH422G expander, PN532 RFID; production 4.3C adds PCF85063A RTC, ES8311 codec, ES7210 ADC). Bus lockups can occur when a device holds SDA low after an interrupted transaction — a common embedded I2C failure mode.
 
 **Timeout Detection**
 
@@ -1687,7 +1721,7 @@ The CH422G controls critical functions (backlight, touch reset, digital outputs 
 
 1. Perform SCL pulse recovery (above)
 2. Re-send CH422G mode configuration (set-mode command 0x48)
-3. Re-write last known EXIO output state (backlight, DOUT0/DOUT1)
+3. Re-write last known EXIO output state (DISP, OC0-OC3 for feedback hardware)
 4. If re-init fails → display remains on (hardware default), but buzzer/LED feedback and touch reset become unavailable
 
 **Recovery State Machine Integration**
@@ -1932,7 +1966,7 @@ Polish and resilience. Implement as time allows; system is functional without th
 ## 16. Future Extensions
 
 - **Battery operation:** Portable use via 18650 / 3.7V LiPo cell connected to BAT1. The Waveshare 4.3C has full on-board charging and boost circuitry (CS8501). Software support needed:
-  - Battery voltage monitoring via EXIO_ADC (CH422G analog input, voltage divider R18/R19)
+  - Battery voltage monitoring (dev board: no EXIO_ADC — requires external ADC or alternative; 4.3C: EXIO_ADC via voltage divider R18/R19)
   - Battery percentage estimation (voltage-to-SoC lookup table for Li-ion discharge curve)
   - Low-battery warning state (`LOW_BATTERY` already defined in state machine)
   - Display brightness auto-dimming to extend runtime
@@ -1946,7 +1980,7 @@ Polish and resilience. Implement as time allows; system is functional without th
 - **Export/import:** Export inventory and usage history from SD card via USB or WiFi download
 - **Multi-printer support:** Track which spool is loaded in which printer; store multiple printer IPs
 - **Auto printer discovery:** Subnet scan to find Creality printers automatically (currently manual IP entry)
-- **Rich audio feedback:** Leverage ES8311/NS4150B audio subsystem for distinct tones, melodies, or voice prompts (current buzzer provides basic beep patterns — see Section 9)
+- **Rich audio feedback (4.3C only):** Leverage ES8311/NS4150B audio subsystem for distinct tones, melodies, or voice prompts (dev board has no audio codec — uses external active buzzer only, see Section 9)
 
 *Note: Filament database updates via printer HTTP API are implemented in current scope (see Section 5.6).*
 

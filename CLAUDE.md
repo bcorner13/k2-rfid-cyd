@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Standalone RFID programmer for Creality K2 Plus CFS (Creality Filament System). ESP32-S3 firmware using Arduino framework, LVGL 9 UI, LovyanGFX display driver, and PN532 RFID reader/writer for MIFARE Classic 1K tags.
 
-**Target board:** Waveshare ESP32-S3 Touch LCD 4.3" (4.3C variant) — 800x480 RGB LCD, GT911 capacitive touch, CH422G I2C expander for backlight/touch reset.
+**Target board:** Waveshare ESP32-S3 Touch LCD 4.3" (development board, NOT the 4.3C/AI Voice variant) — 800x480 RGB LCD, GT911 capacitive touch, CH422G I2C expander for display/touch control. Has RS-485 and CAN bus (unused). No audio subsystem, no RTC, no optocoupler I/O (those are 4.3C-only).
 
 ## Build Commands
 
@@ -83,7 +83,7 @@ JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
 - Headers in `include/`, implementations in `src/` (mirrored directory structure including `ui/screens/` and `ui/widgets/`)
 - Doxygen `@file`/`@brief` doc blocks in key headers and `main.cpp`
 - LVGL 9 API (not v8) — use `lv_obj_*` functions, flex/grid layouts
-- LovyanGFX configured in `include/LGFX_Config.h` for the 4.3C variant specifically
+- LovyanGFX configured in `include/LGFX_Config.h` (works on both dev 4.3 and production 4.3C — same display bus)
 - LVGL configuration in `include/lv_conf.h`
 - Custom board definition in `boards/waveshare_s3_43.json`
 - ArduinoJson v7 used for JSON parsing (uses PSRAM when available)
@@ -92,8 +92,10 @@ JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
 
 ## Hardware Notes
 
-- I2C bus (GPIO8 SDA, GPIO9 SCL) shared between GT911 touch, CH422G expander, and PN532 RFID
-- CH422G (U10) controls backlight (EXIO_PWM) and touch reset (EXIO1) — init pending
+- I2C bus (GPIO8 SDA, GPIO9 SCL) shared between GT911 touch, CH422G expander, and PN532 RFID (3 devices on dev board; 6 on production 4.3C)
+- CH422G (U10) controls display enable (EXIO2), touch reset (EXIO1), LCD reset (EXIO3), SD CS (EXIO4). Also has OC0-OC3 output pins for feedback hardware.
+- IO15/IO16 are RS-485 TX/RX on dev board (usable as GPIO when RS-485 terminal disconnected). On 4.3C they are I2S audio pins.
+- No RTC on dev board — use NTP for timestamps
 - Display uses 16-bit parallel RGB bus at 12 MHz (lowered to reduce jitter)
 - PSRAM: 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
 - Flash: 16MB
