@@ -176,7 +176,7 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   | ES7210 (U12) | 0x40 | 4-ch mic ADC with echo cancellation |
   | PN532 (external) | 0x24 | NFC/RFID reader/writer |
 
-  > **Note:** The CH422G uses non-standard fixed command-byte addressing (8-bit: 0x48 for set-mode, 0x70 for OC write, 0x4D for read). The 7-bit equivalent of 0x48 is 0x24, which overlaps with the PN532 default address. In practice this has not caused bus conflicts because the CH422G command protocol differs from standard I2C register access, but if issues arise, the PN532 V3 module supports SPI mode as an alternative.
+  > **Note:** The CH422G uses non-standard fixed command-byte addressing (8-bit: 0x48 for set-mode, 0x70 for OC write, 0x4D for read). The 7-bit equivalent of 0x48 is 0x24, which overlaps with the PN532 default address. In practice this has not caused bus conflicts because the CH422G command protocol differs from standard I2C register access, but if issues arise, the PN532 V3 module supports SPI mode as an alternative. For I2C bus lockup detection, timeout handling, and SCL pulse recovery procedures, see Section 13.7.
 
   **USB**
 
@@ -229,6 +229,53 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 | `rfid_driver` | PN532 driver; Key A derivation; full read/write for CFS v1 and extended v2 tags |
 | `system_state` | Global state machine with states for inventory, editing, and custom entry operations |
 | `config_manager` | Persistent configuration via `/config.json` |
+
+### 3.2 Data Model Separation
+
+The system uses three distinct data structs that represent filament data at different abstraction levels. Keeping them separate prevents inventory logic from leaking tag format constraints, and isolates v1/v2 tag differences from the rest of the application.
+
+```
+┌─────────────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
+│  FilamentProfile    │     │     SpoolRecord       │     │      TagData         │
+│  (library reference)│     │  (inventory record)   │     │  (RFID abstraction)  │
+├─────────────────────┤     ├──────────────────────┤     ├──────────────────────┤
+│ brand (32 chars)    │────▶│ profile (inline copy) │     │ version (v1/v2)      │
+│ name (48 chars)     │     │ spool_id              │     │ tag_uid              │
+│ material_type       │     │ tag_uid               │◀───▶│ sectors[] (raw)      │
+│ color_hex/name      │     │ initial_weight_g      │     │ origin_magic         │
+│ temps, speeds, fan  │     │ current_weight_g      │     │ payload_string (v1)  │
+│ diameter, density   │     │ status                │     │ extended fields (v2) │
+│ weight_g            │     │ source                │     │ crc32                │
+│ is_custom           │     │ weight_history[]      │     │ mirrors[3]           │
+└─────────────────────┘     └──────────────────────┘     └──────────────────────┘
+        │                            │                            │
+        │  "select from library"     │  "scan tag"                │
+        └───────────────────────────▶│◀───────────────────────────┘
+                                     │  "write tag"
+                                     └───────────────────────────▶│
+```
+
+**FilamentProfile** (Section 5.3): Read-only reference from the Creality material database. Contains all known properties of a filament type. Loaded from JSON, cached in PSRAM. Never modified at runtime (except via DB update). Used as a template when creating new spools.
+
+**SpoolRecord** (Section 6): Mutable inventory record for an owned spool. Contains an inline copy of filament properties (not a reference to FilamentProfile — survives DB updates). Tracks weight, usage history, status, and optional tag UID. Persisted to `/inventory.json`.
+
+**TagData** (Section 7.9): Typed abstraction over raw RFID tag bytes. Encapsulates v1/v2 format differences, sector layout, mirror management, and CRC. The `rfid_driver` produces/consumes `TagData`; all other modules work with `SpoolRecord` or `FilamentProfile`.
+
+**Conversion rules:**
+
+| From | To | Conversion | Data Loss |
+|------|----|-----------|-----------|
+| FilamentProfile → SpoolRecord | Library select / custom entry | Copy fields into `profile` sub-object; set `source = "library"` or `"manual"` | None |
+| TagData → SpoolRecord | RFID scan | Parse tag payload + extended sectors; set `source = "scan"`, `tag_uid` from tag | v1: brand/name lost (not on tag). v2: brand truncated to 12 chars, name to 16 chars. |
+| SpoolRecord → TagData | RFID write | Serialize profile fields into tag payload string + extended sectors | Material type truncated to 5 chars. Brand to 12, name to 16 (v2 only). Temps/speeds/fan not written on v1. |
+| TagData → FilamentProfile | Not used | — | — |
+| SpoolRecord → FilamentProfile | Not used | — | — |
+| FilamentProfile → TagData | Not directly | Must go through SpoolRecord first (SpoolRecord adds spool_id, weight tracking) | — |
+
+This separation ensures:
+- Tag format changes (v1→v2→future) are isolated to `TagData` and `rfid_driver`
+- Inventory logic never needs to know about sector layouts or CRC
+- UI screens work exclusively with `SpoolRecord` (inventory) or `FilamentProfile` (library)
 
 ---
 
@@ -343,9 +390,11 @@ Fields populated from the Creality upstream database during load (the JSON alrea
 
 ### 5.5 Memory Strategy
 - Gzipped JSON decompressed into PSRAM-backed `JsonDocument`
-- Parsed data copied into compact `std::vector<FilamentProfile>` cache
-- JSON document discarded after load
-- Runtime cache resides in RAM; source files remain on LittleFS (gzipped) and SD card (raw)
+- Parsed data copied into compact `std::vector<FilamentProfile>` cache (capped at 1000 profiles)
+- JSON document discarded after load — only the cache persists at runtime
+- Runtime cache resides in PSRAM; source files remain on LittleFS (gzipped) and SD card (raw)
+- Peak memory during DB load: ~600 KB PSRAM (transient). See Section 14.1 for full memory budget.
+- PSRAM allocation failures handled gracefully — see Section 14.3
 
 ### 5.6 Database Update Mechanism
 
@@ -366,19 +415,32 @@ GET http://{printer_ip}/info
 
 1. User taps "Update Database" in Settings
 2. Text input shows saved printer IP (from `config.json`), user confirms or edits
-3. "Test Connection" verifies printer is reachable via `GET /info`
-4. On success, `GET /downloads/defData/material_database.json` downloads the full JSON
-5. Raw JSON saved to SD card: `/material_database.json` (backup, overwrites previous)
-6. JSON gzip-compressed in memory, written to LittleFS: `/material_database.json.gz`
-7. FilamentDB cache reloaded from the new data
-8. UI displays: success status, profile count, timestamp (from RTC)
-9. Printer IP saved to `config.json` for next time
+3. "Test Connection" verifies printer is reachable via `GET /info`; store `printer_model` from response
+4. On success, issue `GET /downloads/defData/material_database.json`:
+   - Check `Content-Length` header before downloading body
+   - If `Content-Length` > 512 KB → abort: "Database too large ({size} KB, max 512 KB)" — see Section 14.2
+   - Allocate PSRAM buffer via `heap_caps_malloc`; if allocation fails → abort: "Not enough memory" — see Section 14.3
+   - Stream response body into PSRAM buffer
+5. **Compute SHA-256** of raw JSON buffer (via ESP32 hardware-accelerated `mbedtls_sha256`)
+6. **Compare hash** to `config.db_hash`:
+   - If identical → "Database is already up to date ({count} profiles)" — skip write, no changes
+   - If different → proceed with update
+7. **Validate schema** before committing:
+   - Check for expected structure: `result.list[]` array with `base.{id, brand, name, meterialType}` and `kvParam.{nozzle_temperature}`
+   - If structure matches known format → `db_schema_version = 1`
+   - If top-level keys differ or `result.list` is missing → **schema change detected**: warn user "Database format has changed — {details}. Update anyway?" → [Proceed] / [Cancel]. If user proceeds, set `db_schema_version = 0` (unknown) and attempt best-effort parse.
+8. Raw JSON saved to SD card: `/material_database.json` (backup, overwrites previous)
+9. JSON gzip-compressed in memory, written to LittleFS: `/material_database.json.gz` (atomic: write temp file, rename)
+10. FilamentDB cache reloaded from the new data
+11. Update `config.json`: `db_hash`, `db_updated_at` (RTC timestamp), `db_profile_count`, `printer_model`, `db_schema_version`, `printer_ip`
+12. UI displays: success status, profile count, timestamp, and whether schema version changed
 
 **Error handling:**
 - Network unreachable → "Cannot reach printer at {ip}" with retry option
-- Invalid response (not JSON, wrong format) → "Invalid database format" — previous DB preserved
+- Invalid response (not JSON) → "Invalid database format" — previous DB preserved
+- Schema validation failure (user cancelled) → previous DB preserved
 - LittleFS write failure → "Storage error" — SD backup still available for manual recovery
-- Download interrupted → previous database remains active (atomic replace: write to temp file, rename)
+- Download interrupted → previous database remains active (atomic replace via temp file)
 
 ### 5.7 Storage Architecture
 
@@ -398,7 +460,7 @@ The system uses a dual-storage approach: LittleFS on internal flash for active r
 |----------------|---------|
 | `/material_database.json` | Uncompressed backup of last downloaded DB |
 | `/backups/inventory_YYYYMMDD_HHMMSS.json` | Timestamped inventory backups (created before each DB update) |
-| `/logs/usage_log.csv` | Full weight history log (spool_id, weight_g, timestamp) — unbounded |
+| `/logs/usage_YYYYMMDD.csv` | Daily usage log files — see Section 5.9 for full spec |
 | `/exports/` | User-initiated data exports |
 
 **Benefits of this split:**
@@ -407,7 +469,84 @@ The system uses a dual-storage approach: LittleFS on internal flash for active r
 - Weight history in `inventory.json` can be kept small (last 10 entries per spool) since the full log lives on SD
 - Raw JSON backup on SD enables manual recovery if LittleFS gets corrupted
 
+### 5.9 SD Card Usage Log
+
+#### Format
+
+CSV with comma delimiter, UTF-8 encoding, `\n` (LF) line endings. Each file covers one calendar day (UTC from RTC).
+
+**File path pattern:** `/logs/usage_YYYYMMDD.csv` (e.g., `/logs/usage_20260214.csv`)
+
+**Header row** (written when file is created):
+```
+#v1,spool_id,event,weight_g,timestamp,notes
+```
+
+The `#v1` prefix serves as a **format version tag**. Future format changes increment this (`#v2`, etc.), allowing analytics tools to parse files correctly across firmware versions.
+
+**Data rows:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `spool_id` | string | e.g., `SPL-0042` |
+| `event` | enum | `WEIGHT_UPDATE`, `CREATED`, `ARCHIVED`, `DELETED`, `REACTIVATED`, `TAG_SYNCED` |
+| `weight_g` | uint32 | Current weight at time of event (0 for non-weight events) |
+| `timestamp` | ISO 8601 | `YYYY-MM-DDTHH:MM:SSZ` (UTC from RTC). ISO 8601 chosen over Unix epoch for human readability when SD card is read on a PC. |
+| `notes` | string | Optional context, quoted if contains commas. e.g., `"from_tag"`, `"manual_entry"`, `""` |
+
+**Example:**
+```csv
+#v1,spool_id,event,weight_g,timestamp,notes
+SPL-0001,WEIGHT_UPDATE,750,2026-02-14T10:30:00Z,"manual_entry"
+SPL-0001,WEIGHT_UPDATE,620,2026-02-14T14:15:00Z,"from_tag"
+SPL-0002,CREATED,1000,2026-02-14T14:20:00Z,"source:scan"
+SPL-0003,ARCHIVED,0,2026-02-14T16:00:00Z,""
+SPL-0004,DELETED,0,2026-02-14T16:05:00Z,""
+```
+
+#### Log Rotation
+
+- **One file per day** — new file created when the date changes (checked on first write after midnight UTC)
+- File size is naturally bounded: at ~80 bytes per row, 1000 events/day = ~80 KB/day
+- No automatic deletion of old log files — 128 GB SD card holds years of logs
+- Future: export UI could offer "Delete logs older than N days" option
+
+#### Write Atomicity & SD Removal Safety
+
+SD card FAT32 appends are **not atomic** — a power loss or card removal mid-write can corrupt the last line or the FAT.
+
+**Mitigations:**
+
+| Risk | Mitigation |
+|------|-----------|
+| Power loss mid-write | Each log entry is a single short line (~80 bytes). `file.flush()` called after every append. Corruption limited to at most the last line — all prior entries intact. |
+| SD card removed mid-write | SD operations wrapped in a try/check pattern: verify `SD.exists()` before open. If write fails, set `sd_available = false` flag, skip future SD writes until next `sd_check()` (periodic, every 60s). Log entry lost but LittleFS inventory is unaffected. |
+| FAT corruption from dirty unmount | On boot, if SD mount fails after previously working → warn user: "SD card may need formatting. Inventory is safe on internal storage." |
+| File grows too large (single day with thousands of events) | Unlikely in normal use. Safety cap: if single file exceeds **1 MB**, close and start a new file with suffix: `usage_YYYYMMDD_2.csv` |
+
+**Non-fatal principle:** All SD log write failures are non-fatal warnings. The system never blocks or enters ERROR state due to SD card issues. LittleFS inventory is the authoritative data store — SD logs are supplementary.
+
+#### SD Card Availability Check
+
+```cpp
+// Periodic check (called from loop() every 60 seconds)
+void sd_check() {
+    bool was_available = sd_available;
+    sd_available = SD.exists("/");  // Quick mount check
+    if (!was_available && sd_available) {
+        Serial.println("SD card reinserted");
+        // Resume logging — no recovery needed, just start appending
+    }
+    if (was_available && !sd_available) {
+        Serial.println("SD card removed");
+        // Non-fatal — disable SD features until redetected
+    }
+}
+```
+
 ### 5.8 FilamentProfile to SpoolData Mapping
+
+> **Note:** The current codebase uses a single `SpoolData` class (in `include/spool_data.h`) that combines inventory state and tag serialization. Per the data model separation (Section 3.2), this will be refactored into `SpoolRecord` (inventory) + `TagData` (RFID abstraction). The mapping table below uses the current `SpoolData` field names for reference, with the target model in parentheses.
 
 When a filament is selected from the library, `FilamentProfile` fields map to `SpoolData` as follows:
 
@@ -498,15 +637,152 @@ The inventory system tracks all owned filament spools. Spools can be added by sc
 
 ```
 init()                              — Load /inventory.json; create file with empty schema if missing
-save()                              — Persist full inventory to LittleFS (overwrite)
+save()                              — Persist full inventory to LittleFS (atomic write — see Section 6.9)
 addSpool(profile, weight, uid)      — Create new inventory record; returns spool_id
-removeSpool(spool_id)               — Set status to "archived" (soft delete)
+archiveSpool(spool_id)              — Set status to "archived" (soft delete, reversible — see Section 6.10)
+deleteSpool(spool_id)               — Permanently remove spool record (irreversible — see Section 6.10)
 updateWeight(spool_id, weight)      — Update current_weight_g; append to weight_history
 getSpoolByUID(tag_uid)              — Lookup spool by RFID tag UID; returns nullptr if not found
 getSpoolById(spool_id)              — Lookup spool by internal ID
 getAllActive()                       — Return vector of active (non-archived) spools
 getSpoolCount()                     — Total number of active spools
 ```
+
+### 6.7 Tag ↔ Inventory Reconciliation
+
+When a scanned RFID tag matches an existing inventory spool (by `tag_uid`), the tag's weight (sectors 6-8) and the inventory's `current_weight_g` may disagree — for example, after the Creality K2 Plus printer updates the tag weight during a print while the inventory remains stale.
+
+**Policy: Prompt on mismatch (Option C)**
+
+```
+1. User scans tag
+2. System reads tag weight from sectors 6-8
+3. System looks up spool by tag_uid in inventory
+4. If found AND tag_weight ≠ inventory_weight:
+   → Show dialog:
+     "Tag: 620g | Inventory: 750g"
+     [Use Tag Weight]  [Keep Inventory]  [Cancel]
+5. If user selects "Use Tag Weight":
+   → updateWeight(spool_id, tag_weight) — updates inventory, appends history
+6. If user selects "Keep Inventory":
+   → No change to inventory; optionally offer to write inventory weight back to tag
+7. If weights match:
+   → No prompt, proceed directly to Spool Detail
+```
+
+**Threshold:** A tolerance of ±5g avoids prompts from rounding differences (tag stores weight as length in mm with integer precision). Only prompt when `abs(tag_weight - inventory_weight) > 5`.
+
+**New tag (not in inventory):**
+- Tag scanned but `tag_uid` not found in inventory → auto-create new spool record from tag data with `source: "scan"`, weight from tag sectors 6-8.
+
+**Untagged inventory spool:**
+- Spool has no `tag_uid` (local-only, created via manual entry) → reconciliation does not apply.
+
+### 6.8 UID Uniqueness & Collision Handling
+
+**Invariant:** A `tag_uid` must be unique among all **active** (non-archived) spools in the inventory. Archived spools may retain their `tag_uid` for historical reference but are excluded from UID lookups.
+
+**Lookup order for `getSpoolByUID(tag_uid)`:**
+1. Search active spools only (status = `"active"` or `"empty"`)
+2. If no active match, search archived spools
+3. If no match at all, treat as new tag
+
+**Collision scenarios and policies:**
+
+| Scenario | Detection | Policy |
+|----------|-----------|--------|
+| **Duplicate UID among active spools** | `addSpool()` finds existing active spool with same UID | Error: "This tag is already assigned to spool {spool_id}. Remove existing assignment first." Reject the add. |
+| **Tag reinitialized / rewritten** | Scanned tag data (material, color) differs significantly from inventory record for that UID | Prompt: "Tag data doesn't match inventory record '{name}'. Replace inventory entry with new tag data?" → [Replace] [Keep Old] [Add as New Spool] |
+| **Archived spool rescanned** | UID matches an archived spool, no active match | Prompt: "This tag was previously archived as '{name}'. Reactivate it?" → [Reactivate] (sets status back to `"active"`, updates weight from tag) / [Create New] (new spool record, old stays archived) |
+| **Cloned tag (duplicate UID)** | User writes same UID to two physical tags (rare, requires specialized hardware) | System cannot distinguish clones from the original. Only one inventory record per UID. User must manage manually — remove UID from one spool via Spool Detail ("Unlink Tag" action). |
+
+**Tag reassignment flow (Write to Tag from Spool Detail):**
+When a user writes spool data to a new/different tag:
+1. The new tag's UID is read during the write operation
+2. If that UID is already assigned to a different active spool → error, abort write
+3. If write succeeds, the spool's `tag_uid` is updated to the new UID
+4. The old tag (if any) is now orphaned — scanning it will trigger the "new tag" flow
+
+**"Unlink Tag" action (Spool Detail screen):**
+Clears the spool's `tag_uid` to empty string, making it a local-only spool. The physical tag remains unchanged but will be treated as a new/unrecognized tag on next scan.
+
+### 6.9 Save Atomicity
+
+Inventory is the most critical persistent data on the device — losing it means losing all spool records and weight history. A raw overwrite (`open → write → close`) risks corruption if power is lost mid-write. All inventory writes use atomic replace semantics.
+
+**Atomic write procedure (`save()`):**
+
+```
+1. Serialize cache to JSON in PSRAM buffer
+2. Write to temp file: /inventory.json.tmp
+3. Flush to flash: file.flush() (fsync equivalent on LittleFS)
+4. Close temp file
+5. Remove old file: LittleFS.remove("/inventory.json")
+6. Rename: LittleFS.rename("/inventory.json.tmp", "/inventory.json")
+```
+
+**Failure modes:**
+
+| Failure Point | State After Power Restore | Recovery |
+|---------------|--------------------------|----------|
+| During step 2-4 (writing temp) | `/inventory.json` intact, `/inventory.json.tmp` partial | `init()` deletes orphaned `.tmp` file, loads existing inventory |
+| During step 5 (remove old) | Both files may exist, or old is gone + temp present | `init()` checks: if `.tmp` exists and `/inventory.json` is missing, rename `.tmp` → `.json` |
+| During step 6 (rename) | Old removed, `.tmp` exists but not yet renamed | Same as above — `init()` recovers from `.tmp` |
+
+**`init()` recovery logic:**
+
+```
+1. If /inventory.json.tmp exists:
+   a. If /inventory.json also exists → delete .tmp (interrupted before remove)
+   b. If /inventory.json missing → rename .tmp → .json (interrupted after remove)
+2. Load /inventory.json normally
+3. If load fails (corrupt) → attempt to load latest backup from SD card
+4. If no backup → create empty inventory
+```
+
+**SD card backup:**
+After every successful atomic save to LittleFS, a timestamped backup is written to SD card: `/backups/inventory_YYYYMMDD_HHMMSS.json`. SD write failure is non-fatal — LittleFS is the primary store. Old backups are retained (not overwritten) so the user can recover from any historical state.
+
+**This same atomic write pattern applies to:**
+- `/material_database.json.gz` (Section 5.6, step 9)
+- `/config.json` (lower risk due to small size, but same pattern for consistency)
+
+### 6.10 Archive vs Delete Behavior
+
+Two distinct removal operations with different consequences:
+
+**Archive (reversible, soft delete):**
+
+| Aspect | Behavior |
+|--------|----------|
+| **Action** | `archiveSpool(spool_id)` sets `status` to `"archived"`, sets `updated_at` to current RTC timestamp |
+| **Inventory JSON** | Spool record **remains** in `/inventory.json` with `status: "archived"` |
+| **UID association** | `tag_uid` **retained** on the archived record. Excluded from active UID lookups but available for reactivation (see Section 6.8 "Archived spool rescanned"). |
+| **SD usage history** | Unchanged — all prior entries in `/logs/usage_YYYYMMDD.csv` preserved |
+| **RAM cache** | Record remains in `std::vector<SpoolRecord>` but filtered out of `getAllActive()` |
+| **Reversibility** | Fully reversible — scanning the linked tag or a future "Unarchive" action sets status back to `"active"` |
+| **UI visibility** | Hidden from default inventory list. Visible via "Show archived" filter (future) or when the linked tag is rescanned. |
+| **Confirmation** | Single tap — no confirmation dialog (easy to undo) |
+
+**Delete (irreversible, hard delete):**
+
+| Aspect | Behavior |
+|--------|----------|
+| **Action** | `deleteSpool(spool_id)` permanently removes the record from the inventory cache |
+| **Inventory JSON** | Spool record **removed** from `/inventory.json` on next `save()` |
+| **UID association** | Cleared — the physical tag becomes unrecognized. Scanning it will trigger the "new tag" flow (Section 6.7). |
+| **SD usage history** | **Preserved** — entries in `/logs/usage_YYYYMMDD.csv` are never deleted (append-only log). The `spool_id` in the log remains as a historical reference even though the inventory record is gone. |
+| **SD deletion record** | A deletion event is appended to the usage log: `{spool_id}, DELETED, {timestamp}` |
+| **RAM cache** | Record removed from `std::vector<SpoolRecord>` |
+| **Reversibility** | **Irreversible** from the device. Recovery only possible by restoring an SD card backup (Section 6.9). |
+| **UI visibility** | Gone from all views |
+| **Confirmation** | **Two-step confirmation required:** first tap shows dialog "Permanently delete '{name}'? This cannot be undone." → [Delete] / [Cancel]. Destructive button styled red. |
+
+**Decision guide (shown in Spool Detail):**
+
+The UI should make the distinction clear:
+- **Archive** button: normal styling, labeled "Archive" — for spools you're done with but might reuse
+- **Delete** button: red/destructive styling, labeled "Delete" — for spools added by mistake or duplicates
 
 ### 6.6 Memory Strategy
 - Full inventory JSON loaded into PSRAM during `init()`
@@ -588,7 +864,7 @@ When reading a tag, the system checks the version byte. If `0x01`, only sectors 
 | 0x06 | 2 | Bed temp max (°C) | 80 |
 | 0x08 | 2 | Nozzle temp default (°C) | 240 |
 | 0x0A | 2 | Bed temp default (°C) | 70 |
-| 0x0C | 4 | Reserved | 0x00000000 |
+| 0x0C | 4 | **Origin magic** | `0x4B324658` ("K2FX" ASCII, little-endian) |
 
 #### Sector 11, Block 44: Print Speed & Fan Settings
 
@@ -618,12 +894,160 @@ When reading a tag, the system checks the version byte. If `0x01`, only sectors 
 **Encoding notes:**
 - All multi-byte integer values are little-endian
 - All strings are ASCII, null-padded to fill the field
-- CRC32 in sector 15 is recalculated to cover sectors 1-13 (extended from 1-9 for v1)
 
-### 7.6 Write Semantics
+**Origin detection (v2 tag ownership):**
+
+Sector 10, offset 0x0C contains a 4-byte **origin magic**: `0x4B324658` (ASCII `"K2FX"`, stored little-endian). This marker identifies tags whose extended sectors (10-13) were written by this system.
+
+| Version Byte | Origin Magic | Interpretation | Behavior |
+|-------------|-------------|----------------|----------|
+| `0x01` | N/A (sectors 10-13 not read) | Standard CFS v1 tag (Creality original) | Read sectors 1-9 only. Safe to write v2 extended data if user explicitly requests "Save + Write to tag" (upgrades tag to v2). |
+| `0x02` | `0x4B324658` ("K2FX") | Extended v2 tag written by this system | Read sectors 1-13. Safe to overwrite extended sectors on write. |
+| `0x02` | Any other value | Extended v2 tag from unknown/third-party system | Read sectors 1-9 only (ignore 10-13). **Do not overwrite** sectors 10-13. Warn user: "Tag has extended data from another system. Only standard fields will be used." Write operations write sectors 1-9 only (v1 behavior). |
+| `0x02` | `0x00000000` (all zeros) | Possibly uninitialized extended sectors | Treat as foreign — same as "any other value" above. |
+
+This prevents silently corrupting tags that were programmed by third-party tools that also use sectors 10-13 with a different layout.
+
+### 7.6 CRC32 Checksum (Sector 15)
+
+**Location:** Sector 15, Block 60, offset 0x00 — 4 bytes, little-endian.
+
+**Algorithm:**
+- **Standard:** CRC-32/ISO-HDLC (IEEE 802.3), same as zlib `crc32()`
+- **Polynomial:** 0x04C11DB7 (normal form) / 0xEDB88320 (reflected, as used in lookup table implementations)
+- **Initial value:** 0xFFFFFFFF
+- **Final XOR:** 0xFFFFFFFF
+- **Input/output reflection:** Yes (standard reflected CRC-32)
+- **Stored endianness:** Little-endian (LSB at offset 0x00)
+
+**Coverage:**
+
+| Tag Version | CRC Input Data |
+|-------------|----------------|
+| v1 (0x01) | Data blocks of sectors 1–9 (36 blocks × 16 bytes, excluding sector trailers) |
+| v2 (0x02) | Data blocks of sectors 1–13 (52 blocks × 16 bytes, excluding sector trailers) |
+
+**Excluded from CRC:**
+- Sector 0 (manufacturer / UID block — read-only, cannot be part of integrity check)
+- Sector trailers (block 3 of each sector — contain Key A/B and access bits, not data)
+- Sector 14 (reserved, must not be modified)
+- Sector 15 itself (contains the CRC)
+
+**Per-sector, 3 of 4 blocks are data blocks** (blocks 0, 1, 2). Block 3 is the sector trailer. So:
+- v1: sectors 1–9 = 9 sectors × 3 data blocks × 16 bytes = **432 bytes** input to CRC
+- v2: sectors 1–13 = 13 sectors × 3 data blocks × 16 bytes = **624 bytes** input to CRC
+
+**Validation:** On read, compute CRC over the appropriate sectors (based on version byte) and compare to stored value. Mismatch → tag flagged as potentially corrupt, user warned.
+
+**Update:** CRC must be recomputed and written to sector 15 after any write to sectors 1–13. This is the final step of the write transaction.
+
+### 7.7 Write Semantics
 All writes are transactional: authenticate → read existing → validate → write → read back → byte-compare → update CRC → confirm. Partial writes are forbidden. All three mirrors (sectors 6-8) must be updated consistently. For v2 tags, sectors 10-13 are also written atomically with the CRC update.
 
 Full specification: `docs/rfid/creality-k2plus-rfid-spec.md`
+
+### 7.8 Read Integrity: Mirror Voting & CRC Validation
+
+Sectors 6-8 contain three mirrored copies of the remaining filament weight/length. If power is lost during a write (by the printer or this device), some mirrors may be updated while others are stale or corrupted. The system uses **majority voting** to recover a reliable value.
+
+**Mirror read procedure:**
+
+```
+1. Read all 3 mirrors: sector 6 → M0, sector 7 → M1, sector 8 → M2
+2. Compare data blocks byte-for-byte:
+   a. If M0 == M1 == M2 → unanimous, use any (prefer M0)
+   b. If two match, one differs → use majority value
+      - M0 == M1, M2 differs → use M0 (M2 likely stale/corrupt)
+      - M0 == M2, M1 differs → use M0
+      - M1 == M2, M0 differs → use M1
+   c. If all three differ → tag is corrupt (see below)
+3. Log which mirrors disagreed (Serial debug output)
+```
+
+**CRC validation (combined with mirror check):**
+
+| Mirror Status | CRC Status | Interpretation | Action |
+|--------------|-----------|----------------|--------|
+| All 3 match | CRC valid | Tag is healthy | Use data normally |
+| All 3 match | CRC invalid | CRC stale (power-fail after mirrors written, before CRC) | Use mirror data (it's consistent). Offer to repair: "Tag CRC is outdated. Repair?" → rewrite CRC. |
+| 2 of 3 match | CRC valid | One mirror corrupt (partial write) | Use majority value. Offer to repair: "One mirror is inconsistent. Repair?" → rewrite the bad mirror. |
+| 2 of 3 match | CRC invalid | Partial write interrupted CRC update | Use majority value. Offer to repair CRC + bad mirror. |
+| All 3 differ | CRC valid | Severe corruption but CRC matches something | Compute CRC against each mirror individually. Use the one that matches CRC. If none match → corrupt. |
+| All 3 differ | CRC invalid | **Tag is corrupt** | Warn user: "Tag data is corrupted (all mirrors disagree, CRC invalid). The tag cannot be trusted." Do **not** use data. Do **not** add to inventory. Offer: [Write New Data] (reinitialize from inventory/library) or [Dismiss]. |
+
+**Power-fail during write — failure point analysis:**
+
+| Failure Point | Tag State After Power Restore | Recovery |
+|--------------|-------------------------------|----------|
+| After sector 6 written, before 7-8 | M0 = new, M1 = old, M2 = old | Majority voting → old value (safe). Next full write repairs all 3. |
+| After sectors 6-7 written, before 8 | M0 = new, M1 = new, M2 = old | Majority voting → new value (correct). Sector 8 stale but outvoted. |
+| After sectors 6-8 written, before CRC | M0 = M1 = M2 = new, CRC = old | Mirrors are consistent. CRC mismatch detected → offer repair. |
+| After CRC written | Fully consistent | No issue. |
+| Mid-block write (within a single sector) | Block may contain partial data | MIFARE Classic writes are block-atomic (16 bytes). Mid-block corruption does not occur at the protocol level — the tag controller commits or discards the full 16-byte block. |
+
+**Write order (maximizes recoverability):**
+```
+Sector 6 → Sector 7 → Sector 8 → Sector 9 (usage counters) → Sector 15 (CRC)
+```
+Mirrors are written in order 6→7→8 so that at any interruption point, majority voting yields either the old (safe) or new (correct) value — never garbage.
+
+### 7.9 TagData Structure
+
+`TagData` is the typed abstraction over raw RFID tag bytes. It encapsulates all v1/v2 format differences so that no other module needs to understand sector layouts, byte offsets, or CRC mechanics. See Section 3.2 for how it relates to `FilamentProfile` and `SpoolRecord`.
+
+```cpp
+struct TagData {
+    // Identity
+    uint8_t  uid[7];                // 7-byte MIFARE UID
+    uint8_t  uid_length;            // 4 or 7
+    uint8_t  version;               // 0x01 = v1, 0x02 = v2
+
+    // v1 payload (parsed from sectors 1-4)
+    char     payload_string[41];    // Fixed-length CFS payload (null-terminated)
+    char     material_type[6];      // 5 chars + null (from payload pos 12-16)
+    uint32_t color_hex;             // Parsed from payload pos 18-23
+    uint16_t material_length_mm;    // Parsed from payload pos 24-27
+
+    // Mutable data (sectors 6-8 mirrors, sector 9)
+    uint16_t remaining_length_mm;   // From mirror voting (Section 7.8)
+    uint32_t usage_counter;         // Sector 9 usage count
+
+    // v2 extended fields (sectors 10-13, only populated if version == 0x02)
+    bool     has_extended;          // true if v2 with K2FX origin magic
+    uint16_t nozzle_temp_min;
+    uint16_t nozzle_temp_max;
+    uint16_t bed_temp_min;
+    uint16_t bed_temp_max;
+    uint16_t nozzle_temp_default;
+    uint16_t bed_temp_default;
+    uint16_t print_speed_min;
+    uint16_t print_speed_max;
+    uint8_t  fan_percent;
+    uint16_t max_volumetric_flow;   // ×10 (e.g., 240 = 24.0 mm³/s)
+    uint16_t diameter_um;
+    uint16_t density_x100;          // ×100 (e.g., 127 = 1.27 g/cm³)
+    char     brand[13];             // 12 chars + null (sector 12)
+    char     product_name[17];      // 16 chars + null (sector 13)
+    uint32_t origin_magic;          // Sector 10 offset 0x0C (0x4B324658 = "K2FX")
+
+    // Integrity
+    uint32_t crc32_stored;          // CRC from sector 15
+    uint32_t crc32_computed;        // CRC computed over read data
+    bool     crc_valid;             // crc32_stored == crc32_computed
+    uint8_t  mirror_agreement;      // 3 = unanimous, 2 = majority, 0 = all differ
+};
+```
+
+**rfid_driver API using TagData:**
+
+| Function | Direction | Description |
+|----------|-----------|-------------|
+| `readTag(TagData& out)` | Tag → TagData | Reads all sectors, performs mirror voting (7.8), validates CRC (7.6), populates all fields. Returns false on auth/read failure. |
+| `writeTag(const TagData& in)` | TagData → Tag | Writes payload to sectors 1-9, extended to 10-13 (if v2), CRC to 15. Follows write order (7.8). Returns false on failure. |
+| `tagDataFromSpool(const SpoolRecord& spool, TagData& out)` | SpoolRecord → TagData | Serializes spool fields into TagData: generates payload string, populates extended fields, sets version/origin. |
+| `spoolFromTagData(const TagData& tag, SpoolRecord& out)` | TagData → SpoolRecord | Parses TagData fields into SpoolRecord: converts length→weight, maps extended fields to profile, sets `source = "scan"`. |
+
+This keeps all byte-level tag logic in `rfid_driver` and `TagData`. The UI, inventory manager, and state machine never touch raw sector data.
 
 ---
 
@@ -642,8 +1066,11 @@ Full specification: `docs/rfid/creality-k2plus-rfid-spec.md`
 | `wifi_ssid` | string | Stored WiFi network |
 | `wifi_password` | string | Stored WiFi password |
 | `printer_ip` | string | Last-used printer IP for database updates (e.g., `"192.168.1.100"`) |
+| `printer_model` | string | Printer model from last `/info` response (e.g., `"F008"` = K2 Plus, `"F018"` = Hi) |
 | `db_updated_at` | uint32 | Unix timestamp of last successful database update |
 | `db_profile_count` | uint16 | Number of profiles in current database |
+| `db_hash` | string | SHA-256 hex digest of the raw JSON as downloaded (64 chars). Used to detect if a re-download is identical to the current DB. |
+| `db_schema_version` | uint8 | Schema version detected during last parse (see Section 5.6). `1` = known Creality format (`result.list[].base` + `result.list[].kvParam`). Incremented if structural changes are detected. |
 
 ### 8.3 Access
 - `config.init()` — loads from LittleFS
@@ -801,7 +1228,7 @@ WiFi Setup → Settings             (connected / cancelled)
 
 **Behavior:**
 - Tap row → navigate to Spool Detail
-- Scan Tag → initiate RFID read → if tag found in inventory, show detail; if new, add to inventory
+- Scan Tag → initiate RFID read → if tag found in inventory, check weight reconciliation (Section 6.7) then show detail; if new, auto-add to inventory with `source: "scan"`
 - Add Custom → navigate to Custom Entry screen
 - List supports scrolling for large inventories
 
@@ -814,13 +1241,14 @@ WiFi Setup → Settings             (connected / cancelled)
 - Info section: temperature ranges, speed range, fan %, diameter, density
 - Weight gauge: circular/bar gauge showing `current_weight_g` vs `initial_weight_g` with percentage
 - Weight history: last N entries displayed as a simple list or mini chart
-- Action buttons: Update Weight, Write to Tag, Archive/Delete
+- Action buttons: Update Weight, Write to Tag, Unlink Tag, Archive/Delete
 
 **Behavior:**
 - Update Weight → opens number input dialog; value saved to inventory with timestamp
-- Write to Tag → navigates to main/write screen pre-populated with this spool's data
-- Archive → sets spool status to "archived", returns to inventory
-- Delete → confirmation dialog, then removes from inventory
+- Write to Tag → navigates to main/write screen pre-populated with this spool's data; if target tag UID differs from spool's current UID, reassigns (see Section 6.8)
+- Unlink Tag → clears `tag_uid` from spool, making it local-only (see Section 6.8). Only shown if spool has a linked tag.
+- Archive → see Section 6.10 for full archive behavior
+- Delete → see Section 6.10 for full delete behavior
 
 ### 11.5 Custom Entry Screen
 
@@ -1021,9 +1449,13 @@ enum class SystemEvent {
     DB_UPDATE_SUCCESS,     // Database download and reload completed
     DB_UPDATE_FAILED,      // Database download or processing failed
 
+    // Error recovery
+    USER_DISMISS,          // User taps OK/Dismiss on error dialog
+    USER_RETRY,            // User taps Retry on error dialog
+
     // System
     BATTERY_CRITICAL,      // Battery level critical (future)
-    TIMEOUT,               // Operation timeout
+    TIMEOUT,               // Operation or error auto-dismiss timeout
     WAKE_UP                // Wake from sleep (future)
 };
 ```
@@ -1050,7 +1482,128 @@ enum class SystemEvent {
 | IDLE | DB_UPDATE_REQUEST | UPDATING_DATABASE |
 | UPDATING_DATABASE | DB_UPDATE_SUCCESS | IDLE |
 | UPDATING_DATABASE | DB_UPDATE_FAILED | ERROR |
+| ERROR | USER_DISMISS | IDLE |
+| ERROR | USER_RETRY | *(returns to the operation that failed — see Section 12.4)* |
 | ERROR | TIMEOUT | IDLE |
+
+### 12.4 Error Recovery Semantics
+
+The ERROR state is entered when any operation fails (RFID read/write, tag verification, DB update). It is **not blocking** — the LVGL event loop continues running so the UI remains responsive and the error dialog is interactive.
+
+**Error dialog UI:**
+
+```
+┌─────────────────────────────────┐
+│  ⚠ Operation Failed             │
+│                                 │
+│  {error message}                │
+│  e.g., "Write failed: no tag    │
+│  detected on reader"            │
+│                                 │
+│  [Retry]  [Dismiss]       5s ⏱ │
+└─────────────────────────────────┘
+```
+
+- Modal overlay on the top layer (blocks interaction with underlying screen)
+- Error message describes what failed and why (see error message table below)
+- Two buttons: **Retry** and **Dismiss**
+- Countdown timer (top-right or bottom-right): auto-dismisses after timeout
+
+**Timeouts:**
+
+| Error Source | Auto-Dismiss Timeout | Rationale |
+|-------------|---------------------|-----------|
+| RFID read failure | 5 seconds | Quick retry expected — user just needs to place tag |
+| RFID write failure | 10 seconds | User may need to reposition tag or check it |
+| RFID verify failure | 10 seconds | Potentially serious — give user time to read message |
+| DB update failure (network) | 15 seconds | User may need to check WiFi/IP — longer read time |
+| DB update failure (schema) | No auto-dismiss | Requires user decision (proceed or cancel) |
+| Inventory save failure | No auto-dismiss | Critical error — user must acknowledge data may not be saved |
+
+**Auto-dismiss behavior:**
+- Countdown displayed as "5s", "4s", "3s"... next to the Dismiss button
+- When timer reaches 0, fires `TIMEOUT` event → transitions to IDLE
+- Any user interaction (tap Retry or Dismiss) cancels the countdown
+- If `beep_enabled`, a short beep sounds when auto-dismiss fires (so user notices even if not looking)
+
+**Retry behavior:**
+
+The ERROR state records which operation failed (`error_source`). When the user taps Retry:
+
+| Error Source | Retry Action |
+|-------------|-------------|
+| READING_TAG | Re-enter READING_TAG → call `rfid.readCFSTag()` again |
+| WRITING_TAG | Re-enter WRITING_TAG → call `rfid.writeCFSTag()` again with same `currentSpool` |
+| VERIFYING_TAG | Re-enter VERIFYING_TAG → read back and compare again |
+| UPDATING_DATABASE | Re-enter UPDATING_DATABASE → retry download from same printer IP |
+| Inventory save | Retry `save()` (atomic write) |
+
+Retry returns to the failed operation's state, **not** to IDLE. If the retry also fails, ERROR is re-entered with a fresh timeout. There is no retry limit — the user can retry indefinitely or dismiss at any time.
+
+**Dismiss behavior:**
+- Fires `USER_DISMISS` event → transitions to IDLE
+- Returns to the screen the user was on before the operation started
+- No data changes — the failed operation has no side effects (writes are transactional, DB updates use atomic replace)
+
+**Error context stored in state machine:**
+
+```cpp
+struct ErrorContext {
+    SystemState failed_state;       // Which state failed (READING_TAG, WRITING_TAG, etc.)
+    String message;                 // Human-readable error description
+    uint16_t auto_dismiss_ms;       // 0 = no auto-dismiss
+    bool retryable;                 // false hides the Retry button
+};
+```
+
+**Non-retryable errors** (Retry button hidden):
+- LittleFS mount failure at boot (fatal — requires restart)
+- SD card format error (non-fatal but not retryable in place)
+
+### 12.5 Operation Lock & UI Guard
+
+The state machine implicitly acts as a **global operation lock** — all destructive operations (RFID read/write, DB update, inventory save) can only begin from IDLE. The UI must enforce this by disabling interaction during non-IDLE states.
+
+**Rule:** When `sysState.current() != IDLE`, all action buttons that trigger state transitions are **disabled** (greyed out, non-clickable). Only navigation that doesn't trigger operations (e.g., back buttons to cancel) remains active.
+
+**Per-screen button guard behavior:**
+
+| Screen | Buttons Disabled When Not IDLE | Always Active |
+|--------|-------------------------------|---------------|
+| Main/Write | READ, WRITE, Library, color picker, weight slider | Settings (navigate away is safe) |
+| Inventory | Scan Tag, Add Custom | Settings, scroll, tap row (view only) |
+| Spool Detail | Update Weight, Write to Tag, Unlink Tag, Archive, Delete | Back |
+| Custom Entry | Save, Save + Write | Back, Cancel, step navigation |
+| Update Database | Test Connection, Download | Back |
+| Settings | WiFi Setup, Update Database, Restart | Back, Beep toggle, About |
+
+**Implementation:**
+
+```cpp
+// In event_handler, gate all operation-triggering actions:
+if (sysState.current() != SystemState::IDLE) {
+    return;  // Reject input — system is busy
+}
+// Proceed with state transition...
+sysState.transition(SystemEvent::WRITE_REQUEST);
+```
+
+**Visual feedback during busy states:**
+- Disabled buttons use `LV_STATE_DISABLED` style (greyed out, reduced opacity)
+- Status label shows current operation: "Reading tag...", "Writing tag...", "Downloading database..."
+- Optional: spinner/progress indicator on active operation
+
+**Specific scenarios prevented:**
+
+| Scenario | Prevention |
+|----------|-----------|
+| User taps WRITE twice rapidly | First tap transitions to WRITING_TAG; second tap rejected (not IDLE) |
+| User navigates to Library mid-write | Library button disabled during WRITING_TAG |
+| User taps READ during DB download | READ button disabled during UPDATING_DATABASE |
+| User taps Scan during a write from Spool Detail | Scan button disabled (not IDLE) |
+| WiFi portal launched during RFID operation | WiFi Setup button disabled (not IDLE) |
+
+**Re-enable:** Buttons are re-enabled when the state machine returns to IDLE (via OPERATION_SUCCESS, OPERATION_FAILED → ERROR → TIMEOUT → IDLE, or DB_UPDATE_SUCCESS/FAILED).
 
 ---
 
@@ -1089,19 +1642,233 @@ enum class SystemEvent {
 - SD card not inserted or mount failure → non-fatal; inventory and DB operate normally from LittleFS only; backup/export features disabled with user notification
 - SD card full → warn user; skip backup write; primary LittleFS operations unaffected
 
+### 13.7 I2C Bus Recovery
+
+The shared I2C bus (IO8=SDA, IO9=SCL) connects 6 devices (GT911 touch, CH422G expander, PCF85063A RTC, ES8311 codec, ES7210 ADC, PN532 RFID). Bus lockups can occur when a device holds SDA low after an interrupted transaction — a common embedded I2C failure mode.
+
+**Timeout Detection**
+
+All I2C transactions use a bounded timeout. The ESP32 I2C peripheral and Wire library support configurable timeouts:
+
+| Transaction Type | Timeout | Action on Timeout |
+|-----------------|---------|-------------------|
+| PN532 command/response | 1000 ms | Increment failure counter; trigger bus recovery if counter ≥ 2 |
+| CH422G EXIO write | 200 ms | Log warning; retry once; trigger bus recovery on second failure |
+| GT911 touch read | 100 ms | Skip frame (touch data is non-critical); trigger recovery after 5 consecutive failures |
+
+**SCL Clock Pulse Recovery (Standard I2C Recovery)**
+
+When a device holds SDA low (bus stuck), the standard recovery procedure is to clock SCL manually until the device releases SDA:
+
+1. Release I2C peripheral (call `Wire.end()`)
+2. Configure IO9 (SCL) as GPIO output, IO8 (SDA) as GPIO input
+3. Clock SCL high/low for **9 pulses** (max one byte + ACK) with 5 µs half-period
+4. After each rising edge, check if SDA is high (released)
+5. If SDA released → generate STOP condition (SDA low→high while SCL high)
+6. If SDA still low after 9 pulses → recovery failed, proceed to full bus reset
+7. Re-initialize Wire (`Wire.begin(SDA, SCL, 400000)`)
+8. Log recovery attempt and outcome
+
+**PN532 Reset Procedure**
+
+If SCL pulse recovery does not resolve PN532 communication failures:
+
+1. Power-cycle the PN532 module (if hardware reset pin is wired; otherwise skip)
+2. Re-initialize Wire bus (`Wire.end()` → `Wire.begin()`)
+3. Re-run PN532 initialization sequence (`pn532.begin()`, `pn532.SAMConfig()`)
+4. Verify communication with `pn532.getFirmwareVersion()`
+5. If verification fails → set RFID status to "unavailable", notify user "RFID module not responding — check connection"
+
+> **Note:** The PN532 V3 module does not expose a hardware reset pin in the standard I2C header. A full reset requires either power-cycling the module (via a GPIO-controlled MOSFET on VCC, not currently wired) or physical reconnection. The software recovery (bus re-init + SAMConfig) resolves most bus lockup scenarios.
+
+**CH422G Re-initialization**
+
+The CH422G controls critical functions (backlight, touch reset, digital outputs for buzzer/LEDs). If CH422G communication fails:
+
+1. Perform SCL pulse recovery (above)
+2. Re-send CH422G mode configuration (set-mode command 0x48)
+3. Re-write last known EXIO output state (backlight, DOUT0/DOUT1)
+4. If re-init fails → display remains on (hardware default), but buzzer/LED feedback and touch reset become unavailable
+
+**Recovery State Machine Integration**
+
+| Trigger | Recovery Action | State Transition |
+|---------|----------------|-----------------|
+| PN532 timeout × 2 | SCL recovery → PN532 re-init | IDLE → IDLE (silent recovery) |
+| PN532 re-init fails | Mark RFID unavailable | → ERROR (user notification) |
+| CH422G timeout | SCL recovery → CH422G re-init | IDLE → IDLE (silent recovery) |
+| Touch timeout × 5 | SCL recovery → log warning | No state change (touch auto-recovers) |
+| SCL recovery fails | Full bus reset (Wire.end/begin) | Log critical warning |
+
+**Preventive Measures**
+
+- **Transaction serialization:** All I2C access (touch polling, RFID operations, CH422G writes) must go through a single task or be mutex-protected. No concurrent I2C transactions.
+- **Inter-device delay:** 1 ms minimum gap between transactions to different devices, allowing bus settle time.
+- **Watchdog:** If I2C bus is unrecoverable after 3 consecutive full recovery attempts, log error and continue operating with degraded functionality (display-only mode, no RFID/buzzer/LED).
+
 ---
 
 ## 14. Constraints
 
-- Internal SRAM is limited (~512 KB); inventory cache and UI objects must fit alongside LVGL buffers
-- PSRAM availability varies by board; JSON parsing should always use PSRAM allocator
+### 14.1 Memory Budget
+
+**PSRAM (8 MB OPI) — shared resource:**
+
+| Consumer | Steady-State | Peak (during DB update) | Notes |
+|----------|-------------|------------------------|-------|
+| LVGL display buffer | ~768 KB | ~768 KB | `(800×480) / 10 × 2 bytes` = 76,800 pixels × 2 = ~150 KB per buffer; single buffer used |
+| FilamentProfile cache | ~100 KB | ~100 KB | ~500 profiles × ~200 bytes each |
+| SpoolRecord cache | ~20 KB | ~20 KB | ~100 spools × ~200 bytes each |
+| ArduinoJson document (DB load) | 0 | ~600 KB | Transient: raw JSON (~180 KB) + JsonDocument overhead (~3× raw). Freed after parse. |
+| HTTP download buffer | 0 | ~512 KB | Raw JSON streamed into PSRAM buffer before hash + schema validation |
+| Gzip compression buffer | 0 | ~100 KB | zlib deflate working memory during gzip-to-LittleFS write |
+| LVGL objects (all screens) | ~200 KB | ~200 KB | Widgets, styles, screen trees |
+| **Total** | **~1.1 MB** | **~2.3 MB** | **Peak is ~29% of 8 MB** |
+
+Headroom at peak: ~5.7 MB free. This is comfortable but must be monitored if features grow.
+
+**Internal SRAM (~512 KB):**
+
+| Consumer | Size | Notes |
+|----------|------|-------|
+| Stack (main task) | ~8 KB | Arduino default |
+| LVGL core (timers, event queue) | ~30 KB | Estimate |
+| WiFi/TCP stack (when active) | ~50 KB | ESP-IDF WiFi buffers |
+| FreeRTOS heap overhead | ~20 KB | Task control blocks, queues |
+| Application globals | ~10 KB | State machine, config struct, global instances |
+| **Total** | **~118 KB** | **~23% of 512 KB** |
+
+SRAM is primarily consumed by the networking stack during DB updates. Most large allocations (JSON, caches, display buffers) go to PSRAM.
+
+### 14.2 Hard Limits
+
+**Storage & Collection Limits:**
+
+| Resource | Limit | Enforced By | Failure Behavior |
+|----------|-------|-------------|------------------|
+| Raw material database JSON | **512 KB max** | Check `Content-Length` header before download; reject if exceeded | Error: "Database too large ({size} KB, max 512 KB). Update aborted." Previous DB preserved. |
+| Gzipped database on LittleFS | **80 KB max** | Check compressed size after gzip | Error: "Compressed database exceeds storage budget." |
+| Inventory spool count | **100 spools max** | `addSpool()` checks count before insert | Error: "Inventory full (100 spools). Archive or delete unused spools." |
+| Inventory JSON on LittleFS | **64 KB max** | Check serialized size before atomic write | Error: "Inventory file too large. Reduce weight history or archive spools." |
+| Weight history per spool | **10 entries max** (in JSON) | `updateWeight()` trims oldest entries | Oldest entry removed; full history in daily SD logs (Section 5.9) |
+| FilamentProfile cache | **1000 profiles max** | Reject load if `result.list` exceeds limit | Warning: "Database has {n} profiles, loading first 1000." |
+
+**String Length Limits:**
+
+| Field | Max Length | Constrained By | Truncation / Handling |
+|-------|-----------|----------------|----------------------|
+| Brand name (FilamentProfile) | **32 chars** | JSON parse: truncate on load | UI dropdown: `lv_label_set_long_mode(LV_LABEL_LONG_DOT)` adds "..." if too wide |
+| Brand name (on RFID tag v2) | **12 chars** | Sector 12 field size (12 bytes ASCII, null-padded) | Truncated to 12 chars when writing to tag; full name preserved in inventory JSON |
+| Filament name (FilamentProfile) | **48 chars** | JSON parse: truncate on load | UI label: `LV_LABEL_LONG_DOT` truncation. Main screen `labelName` width-limited. |
+| Filament name (on RFID tag v2) | **16 chars** | Sector 13 field size (16 bytes ASCII, null-padded) | Truncated to 16 chars when writing to tag; full name preserved in inventory JSON |
+| Material type | **5 chars** | CFS tag format: 5 chars, space-padded | Longer types (e.g., "PLA-Silk") truncated to 5 chars on tag ("PLA-S"); full type in inventory. `find_dropdown_option_index()` uses prefix match to handle truncated types. |
+| Color name | **7 chars** | Hex format `#RRGGBB` | Always formatted as `#RRGGBB` (7 chars). Named colors use the hex string on tag. |
+| Spool ID | **8 chars** | Format: `SPL-NNNN` | Auto-generated, sequential. Wraps at SPL-9999 (reuses archived IDs). |
+| Tag UID | **20 chars** | Format: `XX:XX:XX:XX:XX:XX:XX` (7-byte UID, colon-separated hex) | Fixed format from MIFARE tag. |
+
+**Numeric Value Limits:**
+
+| Field | Min | Max | Unit | Enforced By | Notes |
+|-------|-----|-----|------|-------------|-------|
+| Weight (slider) | 0 | **5000** | grams | `lv_slider_set_range()` | Current code uses 0-1000; FSD specifies 0-5000 for large spools (e.g., 3-5 kg rolls). UI shows `"{n}g"`. |
+| Weight (tag storage) | 0 | 9999 | mm (as length) | 4-digit field, zero-padded | `length = 330 * weight / 1000`. Max weight representable: `9999 * 1000 / 330 ≈ 30,300g` — well beyond practical spool sizes. |
+| Nozzle temp | 0 | **500** | °C | Range validation on parse / custom entry | Reject values outside 0-500 as corrupt/invalid. |
+| Bed temp | 0 | **150** | °C | Range validation on parse / custom entry | Reject values outside 0-150. |
+| Print speed | 0 | **2000** | mm/s | Range validation on parse / custom entry | Reject values outside 0-2000. |
+| Fan percent | 0 | **100** | % | `uint8_t` natural range + clamp | Values > 100 clamped to 100. |
+| Diameter | **1000** | **3500** | µm | Range validation | Covers 1.0mm to 3.5mm. Common values: 1750 (1.75mm), 2850 (2.85mm). Values outside range treated as invalid. |
+| Density | **0.50** | **5.00** | g/cm³ | Range validation | Covers all common filament materials (PLA ~1.24, ABS ~1.04, metal-fill ~3.5). |
+| Color hex | 0x000000 | 0xFFFFFF | — | `uint32_t` masked to 24 bits | Upper byte ignored. |
+
+### 14.3 PSRAM Allocation Failure
+
+All large allocations use `heap_caps_malloc(size, MALLOC_CAP_SPIRAM)`. If PSRAM allocation returns `NULL`:
+
+**During boot (DB or inventory load):**
+1. Log error to Serial: "PSRAM alloc failed: {size} bytes for {purpose}"
+2. Attempt fallback allocation from internal heap (smaller buffer, partial load)
+3. If fallback also fails → show error on splash screen: "Memory error — database too large for available RAM"
+4. System continues with empty DB/inventory (degraded mode: RFID read/write still works, but library is empty)
+
+**During DB update (runtime):**
+1. Abort download, free any partial buffers
+2. Enter ERROR state: "Not enough memory to process database ({size} KB). Try restarting the device."
+3. Previous database preserved (download hasn't touched LittleFS yet)
+4. Retryable — user can restart device to reclaim fragmented memory, then retry
+
+**During inventory save:**
+1. Serialization to PSRAM buffer fails → attempt direct stream-to-file write (lower memory, slower)
+2. If stream write also fails → ERROR state: "Cannot save inventory — memory error. Data is still in RAM cache but not persisted. Restart recommended."
+3. Non-retryable in place (memory is exhausted); restart clears fragmentation
+
+**Monitoring:**
+- `heap_caps_get_free_size(MALLOC_CAP_SPIRAM)` logged at boot and after each major allocation
+- If free PSRAM drops below **1 MB**, log a warning: "Low PSRAM: {free} KB remaining"
+- Future: display memory usage in About screen
+
+### 14.4 General Constraints
+
 - LVGL object creation must occur after LVGL init
-- No blocking operations in `loop()`
-- Inventory limited to ~100 spools to keep `/inventory.json` within ~50 KB on LittleFS
-- LittleFS total budget ~100 KB: `material_database.json.gz` (~40 KB) + `inventory.json` (~50 KB) + `config.json` (<1 KB); see Section 5.7 for full storage architecture
-- Weight history per spool capped at last 10 entries in `inventory.json`; full history logged to SD card (`/logs/usage_log.csv`) for unbounded tracking
-- SD card is optional — system operates fully from LittleFS alone; SD adds backup, history logs, and export capabilities
+- No blocking operations in `loop()` (except WiFiManager captive portal, which is a known exception — see Section 11.9)
+- LittleFS total budget ~100 KB: `material_database.json.gz` (~40-80 KB) + `inventory.json` (~50-64 KB) + `config.json` (<1 KB); see Section 5.7
+- SD card is optional — system operates fully from LittleFS alone; SD adds backup, history logs, and export
 - Extended v2 tag sectors (10-13) must not be written to tags that did not originate from this system
+
+### 14.5 Network Security Model
+
+#### Threat Model Assumption
+
+**This system assumes a trusted local network.** All network communication (WiFi, HTTP to printer) occurs on the user's home/workshop LAN. There is no internet-facing attack surface — the device does not expose any server ports or accept inbound connections.
+
+This assumption is documented explicitly because an attacker on the same LAN could:
+- Spoof the printer IP and serve a malicious JSON payload
+- Intercept the HTTP download (no encryption)
+- Inject or modify data in transit (no integrity check beyond post-download SHA-256)
+
+For typical home/workshop use this risk is acceptable. Users on shared or untrusted networks should isolate the printer and ESP32 on a dedicated VLAN or WiFi segment.
+
+#### Creality K2 Plus Printer Security Posture
+
+The Creality K2 Plus (and K2 Pro/Hi) provides **no authentication or encryption** on its local API:
+
+| Aspect | Status |
+|--------|--------|
+| HTTPS/TLS | **Not supported.** All endpoints are plain HTTP (port 80). |
+| API authentication | **None.** All HTTP requests are served without credentials. |
+| WebSocket auth | **None.** Moonraker API is unauthenticated. |
+| Web interfaces | Fluidd (port 4408), Mainsail (port 4409) — both unauthenticated |
+| Camera feed | WebRTC on port 8000 — unauthenticated |
+| Firmware base | Open-source Klipper + Moonraker stack |
+
+The printer exposes full control to any device on the LAN. This is standard for consumer 3D printers and consistent with Klipper/Moonraker ecosystem norms. **There is no handshake, token, or certificate we can leverage for secure communication.**
+
+#### Validation Hardening (Defense in Depth)
+
+Since we cannot encrypt or authenticate the transport, we validate the response content to reduce the impact of spoofed or corrupted data:
+
+| Check | Location | Purpose |
+|-------|----------|---------|
+| **Printer model validation** | `GET /info` response → `model` field | Only accept known models: `"F008"` (K2 Plus), `"F018"` (Hi), `"F028"` (K2 Pro). Reject unknown models with warning: "Unrecognized printer model '{model}'. Proceed anyway?" |
+| **Content-Length cap** | HTTP response header | Reject downloads > 512 KB (Section 14.2). Prevents memory exhaustion from malicious oversized payload. |
+| **JSON structure validation** | After download, before commit | Verify `result.list[]` array exists with expected `base`/`kvParam` sub-objects (Section 5.6, step 7). Reject structurally invalid JSON. |
+| **SHA-256 hash** | Computed over raw JSON | Detects any modification between downloads. Stored in config for comparison (Section 8.2). |
+| **Profile field bounds** | During FilamentDB parse | Reject profiles with out-of-range values: temperature < 0 or > 500°C, speed < 0 or > 2000 mm/s, diameter < 1000 µm or > 3500 µm, density < 0.5 or > 3.0 g/cm³. Log warning and skip invalid profile. |
+| **String sanitization** | All string fields from JSON | Truncate to max field length. Strip non-printable characters (< 0x20 except whitespace). Prevents buffer overflows in fixed-size RFID tag fields and LVGL label rendering. |
+
+#### Credentials Storage
+
+| Credential | Storage | Notes |
+|-----------|---------|-------|
+| WiFi SSID/password | ESP32 NVS (non-volatile storage, flash-encrypted if enabled) | Managed by WiFi library, not by our code |
+| Printer IP | `/config.json` on LittleFS (plaintext) | Not sensitive — LAN IP only |
+| No API keys/tokens | N/A | Creality API is unauthenticated |
+
+#### Future Security Improvements
+
+- **mDNS/DNS-SD verification:** If Creality printers advertise via mDNS (e.g., `_http._tcp`), verify the service name matches before connecting. Adds a weak form of endpoint identity.
+- **Response signing:** If Creality ever adds response signatures or checksums in headers, validate them.
+- **HTTPS support:** If a future Creality firmware adds TLS, upgrade `HTTPClient` to use HTTPS with certificate pinning.
+- **Network isolation guidance:** Add a setup guide recommending VLAN or guest network isolation for security-conscious users.
 
 ---
 
