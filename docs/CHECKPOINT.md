@@ -7,7 +7,7 @@
 
 ## Summary
 
-Checkpoint after successful migration to the **4.3C** board (Waveshare ESP32-S3 Touch LCD 4.3") and fixes to the **data model** (FilamentProfile, SpoolData, FilamentDB). **UI layout** evolved to a 3-region main screen; spool widget removed.
+Checkpoint after successful migration to the **4.3 development board** (Waveshare ESP32-S3 Touch LCD 4.3") and fixes to the **data model** (FilamentProfile, SpoolData, FilamentDB). **UI layout** evolved to a 3-region main screen; spool widget removed.
 
 ---
 
@@ -73,7 +73,7 @@ Checkpoint after successful migration to the **4.3C** board (Waveshare ESP32-S3 
 4. **Markdown docs**
    - This checkpoint (`docs/CHECKPOINT.md`).
    - Code overview (`docs/CODE-OVERVIEW.md`).
-   - README updated for 4.3C, PN532, LovyanGFX, LVGL 9.
+   - README updated for 4.3 dev board, PN532, LovyanGFX, LVGL 9.
 
 ---
 

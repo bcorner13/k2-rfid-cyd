@@ -13,16 +13,16 @@ A standalone, touchscreen-based RFID programmer for the Creality K2 Plus & CFS (
 
 | Component | Details |
 |-----------|---------|
-| **Board** | Waveshare ESP32-S3 Touch LCD 4.3" (**4.3C** variant) |
+| **Board** | Waveshare ESP32-S3 Touch LCD 4.3" (**development board**) |
 | **Display** | 800×480 RGB LCD, LovyanGFX; touch via GT911 (I2C). Backlight/CTP reset via CH422G (U10). |
 | **RFID** | PN532 (13.56 MHz); MIFARE Classic 1K tags. |
-| **Docs** | [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) — pinout, schematic, CH422G init. |
+| **Docs** | [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) — board variant comparison, CH422G init. |
 
 ## 📁 Documentation
 
 | Doc | Description |
 |-----|-------------|
-| [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) | 4.3C board verification, schematic, LovyanGFX/CH422G notes. |
+| [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) | Board variant comparison (dev 4.3 vs production 4.3C), CH422G notes. |
 | [docs/CHECKPOINT.md](docs/CHECKPOINT.md) | Checkpoint state, build status, model summary, recent changes. |
 | [docs/CODE-OVERVIEW.md](docs/CODE-OVERVIEW.md) | Module map and data flow (embedded + markdown overview). |
 | [docs/rfid/creality-k2plus-rfid-spec.md](docs/rfid/creality-k2plus-rfid-spec.md) | CFS tag layout and sector usage. |
