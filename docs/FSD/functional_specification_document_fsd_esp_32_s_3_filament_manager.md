@@ -15,7 +15,7 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 
   **Waveshare ESP32-S3 Touch LCD 4.3" — Development Board (4.3)**
 
-  > **Board variant note:** This project targets the **development board** (ESP32-S3-LCD-4.3), which has RS-485, CAN bus, and a USB host switch but **no audio subsystem, no RTC, and no optocoupler-isolated I/O**. A production/4.3C variant (AI Voice model with audio, RTC, optocouplers) exists but is not the target hardware. See the comparison table at the end of this section for differences. Schematics: `docs/ESP32-S3-Touch-LCD-4.3-Sch.pdf` (dev), `docs/production board/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf` (production).
+  > **Board variant note:** This project targets the **development board** (ESP32-S3-LCD-4.3), which has RS-485, CAN bus, and a USB host switch but **no audio subsystem, no RTC, and no optocoupler-isolated I/O**. A production/4.3C variant (AI Voice model with audio, RTC, optocouplers) exists but is not the target hardware. See the comparison table at the end of this section for differences. Schematics: `docs/hardware/dev-board-4.3/ESP32-S3-Touch-LCD-4.3-Sch.pdf` (dev), `docs/hardware/production-board-4.3C/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf` (production).
 
   **MCU**
 
@@ -205,9 +205,10 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 
   - Custom PlatformIO board: boards/waveshare_s3_43.json
   - Waveshare wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4.3
-  - Development board schematic: `docs/ESP32-S3-Touch-LCD-4.3-Sch.pdf`
-  - Production board schematic: `docs/production board/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf`
-  - Chip datasheets: `docs/CH422DS1_EN.pdf`, `docs/GT911_EN_Datasheet.pdf`, `docs/ST7262.pdf`, `docs/TJA1051.pdf`, `docs/CH343DS1-en.pdf`
+  - Development board schematic: `docs/hardware/dev-board-4.3/ESP32-S3-Touch-LCD-4.3-Sch.pdf`
+  - Production board schematic: `docs/hardware/production-board-4.3C/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf`
+  - Chip datasheets: `docs/hardware/datasheets/` (CH422G, GT911, ST7262, TJA1051, CH343)
+  - ESP32-S3 docs: `docs/hardware/esp32-s3/` (datasheet, technical reference manual, WROOM module)
   - Board variant notes: `docs/board-variant-4.3C.md`
 
   **Development Board vs Production Board (4.3C) Comparison**
