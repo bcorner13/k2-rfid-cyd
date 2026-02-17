@@ -1,7 +1,7 @@
 #ifndef LGFX_CONFIG_H_
 #define LGFX_CONFIG_H_
 
-/* Target board: Waveshare ESP32-S3-Touch-LCD-4.3C (see docs/board-variant-4.3C.md). */
+/* Target board: Waveshare ESP32-S3-Touch-LCD-4.3 (dev board). Works on 4.3C too — same display bus. */
 
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>

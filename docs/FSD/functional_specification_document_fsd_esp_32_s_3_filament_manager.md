@@ -102,16 +102,25 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   - Powered from the board's I2C header (H8: VCC, GND, SDA, SCL)
   - Supports standard CFS v1 tags and extended v2 tags (see Section 7)
 
+  **Sensor / ADC Input (development board only)**
+
+  - **GPIO6** (ADC1_CH5) — routed to the **Sensor AD** header (J6, PH2.0 2-pin: GND, AD)
+  - On-board voltage divider (÷3): input range 0–9.9V maps to 0–3.3V at the ADC pin
+  - 12-bit resolution (0–4096), conversion: `voltage_mV = 3.3 / 4096 * 3 * adc_value * 1000`
+  - **Not used by the display** — GPIO6 is I2S_MCLK on the 4.3C (audio), but on the dev board it's free and routed to this header
+  - **Battery monitoring:** Wire VBAT (from battery connector J5 or CS8501 output) through the Sensor AD header to read battery voltage. The ÷3 divider maps a full 4.2V LiPo to ~1.4V at the ADC — well within range. No external components needed.
+
   **Available GPIO Pins**
 
   The following pins are available for general-purpose use on the development board:
 
   | GPIO | Board Function | Available For | Notes |
   |------|---------------|---------------|-------|
+  | IO6 | Sensor AD header (J6) | **ADC input** (ADC1_CH5) | On-board ÷3 voltage divider. Not on display bus. Use for battery voltage monitoring. |
   | IO15 | RS485_TXD (via SP3485) | GPIO output | Safe when RS-485 terminal is disconnected. 3.3V output. |
   | IO16 | RS485_RXD (via SP3485) | GPIO input/output | Safe when RS-485 terminal is disconnected. 3.3V output. |
 
-  > **Note:** IO43 and IO44 are UART0 TX/RX — not available. IO6 is on the RGB display data bus — not available. All other GPIOs are consumed by the display parallel bus, SD card SPI, or I2C.
+  > **Note:** IO43 and IO44 are UART0 TX/RX — not available. All other GPIOs are consumed by the display parallel bus, SD card SPI, or I2C.
 
   **Feedback Hardware**
 
@@ -151,6 +160,7 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   - **SGM2212-3.3XKC3G/TR (U8)** — 3.3V LDO regulator from 5V
   - Board draws ~550mA for display alone; total system draw estimated ~700-800mA (display + ESP32 active + PN532)
   - Battery charging occurs via USB-C when connected; CS8501 handles charge/discharge management natively
+  - **Battery voltage monitoring:** Wire VBAT to the **Sensor AD header** (J6, GPIO6/ADC1_CH5). The on-board ÷3 voltage divider maps 0–9.9V to ADC range. A full LiPo at 4.2V reads ~1.4V at the pin (~1745 ADC counts). Use a voltage-to-SoC lookup table for Li-ion discharge curve to estimate battery percentage.
   - **Note:** An external TP4056 charge/discharge step-up module (J5019) was evaluated but is **not required** — the on-board CS8501 provides equivalent functionality.
 
   **Buttons**
@@ -215,7 +225,7 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   | **EXIO6 function** | Available / unassigned | DOUT0 (optocoupler output) |
   | **EXIO7 function** | Available / unassigned | DOUT1 (optocoupler output) |
   | **EXIO_PWM** | Not connected | Backlight PWM (AP3032 boost driver) |
-  | **EXIO_ADC** | Not connected | VBAT sense (voltage divider) |
+  | **EXIO_ADC** | Not connected (use GPIO6 Sensor AD instead) | VBAT sense (voltage divider R18/R19) |
   | **IO15** | RS485_TXD | I2S_DSDIN (audio DAC data) |
   | **IO16** | RS485_RXD | I2S_LRCK (audio L/R clock) |
   | **Backlight driver** | MP3302DJ-LF-Z (DISP on/off) | AP3032 (EXIO_PWM brightness) |
@@ -1958,7 +1968,7 @@ Polish and resilience. Implement as time allows; system is functional without th
 | P2.4 | Network security hardening (validation checks) | 14.5 | P1.10 |
 | P2.5 | Memory budget monitoring (runtime heap logging) | 14.1 | — |
 | P2.6 | String length enforcement (truncation on parse/display) | 14.2 | — |
-| P2.7 | Battery monitoring & low-battery state | 16 (Future) | CH422G ADC |
+| P2.7 | Battery monitoring & low-battery state | 16 (Future) | GPIO6 ADC (Sensor AD header) |
 | P2.8 | Save atomicity for config.json | — | P0.1 pattern |
 
 ---
@@ -1966,7 +1976,7 @@ Polish and resilience. Implement as time allows; system is functional without th
 ## 16. Future Extensions
 
 - **Battery operation:** Portable use via 18650 / 3.7V LiPo cell connected to BAT1. The Waveshare 4.3C has full on-board charging and boost circuitry (CS8501). Software support needed:
-  - Battery voltage monitoring (dev board: no EXIO_ADC — requires external ADC or alternative; 4.3C: EXIO_ADC via voltage divider R18/R19)
+  - Battery voltage monitoring via **GPIO6 Sensor AD** header (dev board: on-board ÷3 divider on J6; 4.3C: EXIO_ADC via R18/R19 divider)
   - Battery percentage estimation (voltage-to-SoC lookup table for Li-ion discharge curve)
   - Low-battery warning state (`LOW_BATTERY` already defined in state machine)
   - Display brightness auto-dimming to extend runtime
