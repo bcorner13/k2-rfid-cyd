@@ -38,11 +38,11 @@ High-level map of modules and data flow for K2-RFID-CYD. For in-code details, se
 | File | Role |
 |------|------|
 | `include/ui/ui_manager.h` / `src/ui/ui_manager.cpp` | **UIManager**: screens, event_handler, currentSpool, color picker, updateDashboardFromSpool. |
-| `include/ui/screens/screen_main.h` | Main screen: spool widget, brand/type dropdowns, weight slider, Write/Library/Settings. |
+| `include/ui/screens/screen_main.h` | Main screen: **3 regions** — left: color block (tap opens picker); right: brand/type dropdowns, weight slider; bottom: Read, Write, Library, Settings, write-status label. |
 | `include/ui/screens/screen_library.h` | Filament library grid (from FilamentDB cache). |
 | `include/ui/screens/screen_settings.h` | Settings: WiFi, DB update, beep, About, Restart. |
 | `include/ui/screens/screen_about.h` | About screen. |
-| `include/ui/widgets/spool_widget.h` | SpoolWidget: arc (fill by weight), labels (type, weight), core (color picker tap). |
+| `include/ui/widgets/spool_widget.h` | SpoolWidget (legacy/unused; structure kept for future widgets). |
 
 ---
 
@@ -60,9 +60,9 @@ High-level map of modules and data flow for K2-RFID-CYD. For in-code details, se
 
 1. **Startup:** LittleFS → FilamentDB loads JSON → cache of FilamentProfile.  
 2. **Library pick:** User taps item in grid → index into `filamentDB.getCache()` → FilamentProfile → SpoolData(profile) → `ui.currentSpool` → `updateDashboardFromSpool()` → main screen updated.  
-3. **Write tag:** User taps Write → `rfid.writeCFSTag(ui.currentSpool)` (SpoolData encoded to tag).  
-4. **Read tag:** (When implemented) `rfid.readCFSTag(spool)` → raw string → SpoolData(string) → `updateDashboardFromSpool()`.  
-5. **Main screen:** Brand/type dropdowns and spool widget show currentSpool; weight slider and color picker update currentSpool and refresh.
+3. **Read tag:** User taps Read → `rfid.readCFSTag(spool)` → SpoolData(string) → `updateDashboardFromSpool()` → status "Read OK" or "No tag / Read failed".  
+4. **Write tag:** User taps Write → `rfid.writeCFSTag(ui.currentSpool)` → status "Write OK" or "Write failed".  
+5. **Main screen:** Left: color block (tap opens color picker); right: brand/type dropdowns, weight slider; bottom: Read, Write, Library, Settings, status label.
 
 ---
 

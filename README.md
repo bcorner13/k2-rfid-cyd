@@ -5,9 +5,9 @@ A standalone, touchscreen-based RFID programmer for the Creality K2 Plus & CFS (
 ## 🚀 Features
 
 * **Standalone operation** — No phone or PC required; program CFS tags from the touch screen.
-* **Filament library** — Pick from material database (brand, type, color); spool widget shows remaining weight.
-* **Tag read/write** — MIFARE Classic 1K tags; CFS payload format (see `docs/rfid/creality-k2plus-rfid-spec.md`).
-* **Visual feedback** — LVGL 9 UI; color picker, weight slider, main/library/settings/about screens.
+* **Filament library** — Pick from material database (brand, type, color).
+* **Tag read/write** — READ and WRITE buttons; MIFARE Classic 1K tags; CFS payload format (see `docs/rfid/creality-k2plus-rfid-spec.md`).
+* **3-region layout** — Left: color block (tap to pick color); right: brand, type, volume; bottom: Read, Write, Library, Settings with status feedback.
 
 ## 🛠 Hardware (current target)
 

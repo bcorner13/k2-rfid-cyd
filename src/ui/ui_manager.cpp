@@ -1,4 +1,5 @@
 #include <ui/ui_manager.h>
+#include <ui/color_palette.h>
 #include <filament_db.h>
 #include <config_manager.h>
 #include <network_manager.h>
@@ -34,6 +35,25 @@ void UIManager::init() {
     screenSettings.init();
     screenAbout.init();
 
+    // Register event handlers once (not on every screen transition)
+    lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.btnReadRfid, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_add_event_cb(screenSettings.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSettings.btnAbout, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSettings.swBeep, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenSettings.btnUpdateDB, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSettings.btnResetWifi, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSettings.btnRestart, event_handler, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_add_event_cb(screenAbout.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+
     createColorPicker();
     createOverlay();
 
@@ -60,15 +80,24 @@ void UIManager::event_handler(lv_event_t* e) {
         else if (obj == ui.screenSettings.btnAbout) ui.showAboutScreen();
         else if (obj == ui.screenAbout.btnBack) ui.showSettingsScreen();
 
-        else if (obj == ui.screenMain.btnWrite) {
-            if (rfid.writeCFSTag(ui.currentSpool)) {
-                // Success
+        else if (obj == ui.screenMain.btnReadRfid) {
+            SpoolData readSpool;
+            if (rfid.readCFSTag(readSpool)) {
+                ui.updateDashboardFromSpool(readSpool);
+                ui.screenMain.setWriteStatus("Read OK", true, false);
+            } else {
+                ui.screenMain.setWriteStatus("No tag / Read failed", false, false);
             }
         }
-        else if (obj == ui.screenMain.spoolWidget.getContainer() ||
-                 obj == ui.screenMain.spoolWidget.getFilamentArc() ||
-                 obj == ui.screenMain.spoolWidget.getCore()) {
-            ui.showColorPicker();  // tap center or ring to pick color
+        else if (obj == ui.screenMain.btnWrite) {
+            if (rfid.writeCFSTag(ui.currentSpool)) {
+                ui.screenMain.setWriteStatus("Write OK", true, false);
+            } else {
+                ui.screenMain.setWriteStatus("Write failed", false, false);
+            }
+        }
+        else if (obj == ui.screenMain.colorBlock) {
+            ui.showColorPicker();  // tap color block to pick color
         }
         else if (obj == ui.screenSettings.btnUpdateDB) {
             network.updateFilamentDB();
@@ -101,7 +130,7 @@ void UIManager::event_handler(lv_event_t* e) {
         if (obj == ui.screenMain.sliderWeight) {
             int weight = lv_slider_get_value(obj);
             ui.currentSpool.setWeight(weight);
-            ui.updateDashboardFromSpool(ui.currentSpool);
+            lv_label_set_text_fmt(ui.screenMain.labelWeight, "%dg", weight);
         }
         else if (obj == ui.screenSettings.swBeep) {
             config.data.beep_enabled = lv_obj_has_state(obj, LV_STATE_CHECKED);
@@ -111,41 +140,26 @@ void UIManager::event_handler(lv_event_t* e) {
 }
 
 void UIManager::showMainScreen() {
-    // Update the main screen with the current spool data before showing it
     updateDashboardFromSpool(currentSpool);
-
-    lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenMain.spoolWidget.getContainer(), event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenMain.spoolWidget.getFilamentArc(), event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenMain.spoolWidget.getCore(), event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_ALL, NULL);
+    screenMain.setWriteStatus("Ready");
     screenMain.show();
 }
 
 void UIManager::showSettingsScreen() {
-    lv_obj_add_event_cb(screenSettings.btnBack, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenSettings.btnAbout, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenSettings.swBeep, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenSettings.btnUpdateDB, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenSettings.btnResetWifi, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(screenSettings.btnRestart, event_handler, LV_EVENT_ALL, NULL);
     screenSettings.show();
 }
 
 void UIManager::showAboutScreen() {
-    lv_obj_add_event_cb(screenAbout.btnBack, event_handler, LV_EVENT_ALL, NULL);
     screenAbout.show();
 }
 
 void UIManager::showFilamentLibrary() {
-    lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_ALL, NULL);
     screenLibrary.populate();
 
-    uint32_t count = lv_obj_get_child_cnt(ui.screenLibrary.grid); // Changed .list to .grid
+    // Grid cells are dynamic (recreated each populate), so register handlers here
+    uint32_t count = lv_obj_get_child_cnt(ui.screenLibrary.grid);
     for(uint32_t i=0; i<count; i++) {
-        lv_obj_t* btn = lv_obj_get_child(ui.screenLibrary.grid, i); // Changed .list to .grid
+        lv_obj_t* btn = lv_obj_get_child(ui.screenLibrary.grid, i);
         lv_obj_add_event_cb(btn, event_handler, LV_EVENT_CLICKED, NULL);
     }
 
@@ -180,57 +194,51 @@ void UIManager::updateBattery(float voltage) {
 
 void UIManager::createColorPicker() {
     modalColorPicker = lv_obj_create(lv_display_get_layer_top(lv_display_get_default()));
-    lv_obj_set_size(modalColorPicker, 280, 200);
-    lv_obj_set_align(modalColorPicker, LV_ALIGN_CENTER); // Changed lv_obj_center
+    lv_obj_set_size(modalColorPicker, 360, 340);
+    lv_obj_set_align(modalColorPicker, LV_ALIGN_CENTER);
     lv_obj_add_flag(modalColorPicker, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_pad_all(modalColorPicker, 12, 0);
 
     lv_obj_t* title = lv_label_create(modalColorPicker);
     lv_label_set_text(title, "Select Color");
-    lv_obj_set_align(title, LV_ALIGN_TOP_MID); // Changed lv_obj_align
-    lv_obj_set_y(title, 5); // Set y offset
+    lv_obj_set_align(title, LV_ALIGN_TOP_MID);
+    lv_obj_set_y(title, 4);
 
     lv_obj_t* btnClose = lv_btn_create(modalColorPicker);
-    lv_obj_set_size(btnClose, 30, 30);
-    lv_obj_set_align(btnClose, LV_ALIGN_TOP_RIGHT); // Changed lv_obj_align
-    lv_obj_set_x(btnClose, 0); // Set x offset
-    lv_obj_set_y(btnClose, 0); // Set y offset
+    lv_obj_set_size(btnClose, 56, 56);
+    lv_obj_set_align(btnClose, LV_ALIGN_TOP_RIGHT);
+    lv_obj_set_x(btnClose, -4);
+    lv_obj_set_y(btnClose, 0);
     lv_obj_t* lClose = lv_label_create(btnClose);
     lv_label_set_text(lClose, "X");
-    lv_obj_set_align(lClose, LV_ALIGN_CENTER); // Changed lv_obj_center
+    lv_obj_set_align(lClose, LV_ALIGN_CENTER);
+    lv_obj_set_style_text_font(lClose, &lv_font_montserrat_24, 0);
     lv_obj_add_event_cb(btnClose, [](lv_event_t* e){ ui.closeColorPicker(); }, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* grid = lv_obj_create(modalColorPicker);
-    lv_obj_set_size(grid, 260, 150);
-    lv_obj_set_align(grid, LV_ALIGN_BOTTOM_MID); // Changed lv_obj_align
-    lv_obj_set_y(grid, -5); // Set y offset
+    lv_obj_set_size(grid, 320, 260);
+    lv_obj_set_align(grid, LV_ALIGN_BOTTOM_MID);
+    lv_obj_set_y(grid, -8);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
+    lv_obj_set_style_pad_row(grid, 6, 0);
+    lv_obj_set_style_pad_column(grid, 6, 0);
 
-    static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t col_dsc[] = {56, 56, 56, 56, 56, LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t row_dsc[] = {56, 56, 56, 56, 56, LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
 
-    uint32_t colors[] = {
-        0xFFFFFF, 0x000000, 0xFF0000, 0x00FF00, 0x0000FF,
-        0xFFFF00, 0x00FFFF, 0xFF00FF, 0x808080, 0xFFA500,
-        0x800000, 0x808000, 0x008000, 0x800080, 0x008080,
-        0x000080, 0xC0C0C0, 0xFFC0CB, 0xFFD700, 0xA52A2A,
-        0xF0E68C, 0xE6E6FA, 0xADD8E6, 0x90EE90, 0xFFB6C1
-    };
-
-    for(int i=0; i<25; i++) {
+    for(int i=0; i<FILAMENT_COLOR_COUNT; i++) {
         lv_obj_t* btn = lv_btn_create(grid);
-        lv_obj_set_size(btn, LV_PCT(100), LV_PCT(100));
-        lv_obj_set_style_bg_color(btn, lv_color_hex(colors[i]), 0);
-        lv_obj_set_grid_cell(btn, LV_GRID_ALIGN_STRETCH, i%5, 1, LV_GRID_ALIGN_STRETCH, i/5, 1);
+        lv_obj_set_size(btn, 56, 56);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(FILAMENT_COLORS[i]), 0);
+        lv_obj_set_style_radius(btn, 6, 0);
+        lv_obj_set_style_pad_all(btn, 0, 0);
+        lv_obj_set_grid_cell(btn, LV_GRID_ALIGN_CENTER, i%5, 1, LV_GRID_ALIGN_CENTER, i/5, 1);
 
         lv_obj_add_event_cb(btn, [](lv_event_t* e){
-            lv_color_t c =
-                lv_obj_get_style_bg_color(
-                    (lv_obj_t*) lv_event_get_target(e),
-                    LV_PART_MAIN
-                );
+            lv_obj_t* t = (lv_obj_t*)lv_event_get_target(e);
+            lv_color_t c = lv_obj_get_style_bg_color(t, LV_PART_MAIN);
             lv_color32_t c32 = lv_color_to_32(c, LV_OPA_COVER);
-
             uint32_t hex =
                 ((uint32_t)c32.red   << 16) |
                 ((uint32_t)c32.green << 8)  |
