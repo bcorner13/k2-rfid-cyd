@@ -10,7 +10,7 @@ High-level map of modules and data flow for K2-RFID-CYD. For in-code details, se
 |------|------|
 | `src/main.cpp` | `setup()`: Serial, LVGL display init, FilamentDB init, config, UIManager; `loop()`: `lv_timer_handler()`, `ui.update()`. |
 | `src/lvgl_display.cpp` | LovyanGFX + LVGL 9 init, display driver, input (touch). |
-| `include/LGFX_Config.h` | Panel/bus/touch config for 4.3C (RGB, GT911). |
+| `include/LGFX_Config.h` | Panel/bus/touch config for 4.3 dev board (RGB, GT911). Works on 4.3C too — same display bus. |
 
 ---
 

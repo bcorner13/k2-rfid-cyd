@@ -71,7 +71,7 @@ void ScreenAbout::show() {
 
     // --- Populate Labels ---
 #ifdef BOARD_ESP32_S3_TOUCH_LCD_4_3C
-    lv_label_set_text(labelBoard, "Board: ESP32-S3-Touch-LCD-4.3C");
+    lv_label_set_text(labelBoard, "Board: ESP32-S3-Touch-LCD-4.3 (Dev)");
 #else
     lv_label_set_text(labelBoard, "Board: (see build)");
 #endif
