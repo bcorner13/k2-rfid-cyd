@@ -1,15 +1,17 @@
-#include <config_manager.h> // Updated include path
-#include <LittleFS.h> // Changed from SPIFFS.h
+#include <config_manager.h>
+#include <LittleFS.h>
+#include <atomic_write.h>
 
 ConfigManager config;
 
 ConfigManager::ConfigManager() {}
 
 void ConfigManager::init() {
-    if(!LittleFS.begin(true)) { // Changed from SPIFFS.begin
+    if(!LittleFS.begin(true)) {
         Serial.println("WARNING: LittleFS failed to mount for ConfigManager!");
         return;
     }
+    recoverTmpFile("/config.json");
     load();
 }
 
@@ -47,11 +49,7 @@ void ConfigManager::save() {
     doc["brightness"] = data.brightness;
     doc["printer_ip"] = data.printer_ip;
 
-    File file = LittleFS.open("/config.json", "w"); // Changed from SPIFFS.open
-    if (!file) {
-        Serial.println("ERROR: Failed to open config.json for writing!");
-        return;
+    if (!atomicWriteJson("/config.json", doc)) {
+        Serial.println("ERROR: Failed to save config.json atomically!");
     }
-    serializeJson(doc, file);
-    file.close();
 }

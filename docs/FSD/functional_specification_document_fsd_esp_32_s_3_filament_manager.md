@@ -333,9 +333,9 @@ This separation ensures:
 5. Initialize subsystems:
    - LittleFS mount
    - SD card mount (FAT32, SPI via EXIO4 chip select)
-   - Config manager (load `/config.json`)
+   - Config manager (`config.init()`: crash recovery via `recoverTmpFile()`, load `/config.json`)
    - Filament database (load `/material_database.json.gz` from LittleFS)
-   - Inventory manager (load `/inventory.json`, create if missing)
+   - Inventory manager (`inventory.init()`: crash recovery via `recoverTmpFile()`, load `/inventory.json`, create empty if missing)
    - RFID driver (PN532 init)
    - Network (WiFi, if enabled)
 6. Display subsystem status on splash screen
@@ -625,6 +625,8 @@ The inventory system tracks all owned filament spools. Spools can be added by sc
 
 ### 6.3 JSON Schema (`/inventory.json`)
 
+Profile fields are stored **flat** (not nested) for simpler serialization and direct mapping to the `SpoolRecord` struct. Status and source are stored as `uint8_t` enum indices.
+
 ```json
 {
   "version": 1,
@@ -632,30 +634,28 @@ The inventory system tracks all owned filament spools. Spools can be added by sc
     {
       "spool_id": "SPL-0001",
       "tag_uid": "04:A3:2B:1C:7D:80:00",
-      "profile": {
-        "brand": "Hyper",
-        "name": "PETG Black",
-        "material_type": "PETG",
-        "color_hex": "000000",
-        "diameter_um": 1760,
-        "nozzle_temp_min": 220,
-        "nozzle_temp_max": 260,
-        "bed_temp_min": 60,
-        "bed_temp_max": 80,
-        "print_speed_min": 30,
-        "print_speed_max": 600,
-        "fan_percent": 50,
-        "density": 1.27
-      },
+      "brand": "Hyper",
+      "name": "PETG Black",
+      "material_type": "PETG",
+      "color_hex": "000000",
+      "diameter_um": 1760,
+      "nozzle_temp_min": 220,
+      "nozzle_temp_max": 260,
+      "bed_temp_min": 60,
+      "bed_temp_max": 80,
+      "print_speed_min": 30,
+      "print_speed_max": 600,
+      "fan_percent": 50,
+      "density": 1.27,
       "initial_weight_g": 1000,
       "current_weight_g": 750,
-      "status": "active",
-      "source": "manual",
-      "created_at": 1700000000,
-      "updated_at": 1700100000,
+      "status": 0,
+      "source": 2,
+      "created_at": 12345,
+      "updated_at": 45678,
       "weight_history": [
-        {"weight_g": 1000, "timestamp": 1700000000},
-        {"weight_g": 750, "timestamp": 1700100000}
+        {"weight_g": 1000, "timestamp": 12345},
+        {"weight_g": 750, "timestamp": 45678}
       ]
     }
   ],
@@ -663,37 +663,166 @@ The inventory system tracks all owned filament spools. Spools can be added by sc
 }
 ```
 
+**Enum mappings:**
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `status` | 0 | ACTIVE |
+| `status` | 1 | EMPTY |
+| `status` | 2 | ARCHIVED |
+| `source` | 0 | SCAN (from RFID tag) |
+| `source` | 1 | LIBRARY (from DB selection) |
+| `source` | 2 | MANUAL (custom entry) |
+
+**Timestamps:** `created_at` and `updated_at` are uptime seconds (`millis() / 1000`), not Unix timestamps — the dev board has no RTC. When NTP is available (WiFi connected), these will be upgraded to Unix timestamps.
+
 ### 6.4 Key Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `spool_id` | string | Auto-generated unique ID (`SPL-NNNN`) |
 | `tag_uid` | string | RFID tag UID if tagged; empty string if local-only |
-| `profile` | object | Inline filament properties (brand, material, color, diameter, temps, speeds, fan, density) |
+| `brand` | string | Filament brand (e.g., "Hyper", "Creality") |
+| `name` | string | Filament name (e.g., "PETG Black") |
+| `material_type` | string | Material type (e.g., "PLA", "PETG") |
+| `color_hex` | string | 6-char hex color (e.g., "FF8800") |
+| `diameter_um` | uint32 | Filament diameter in microns (default 1750) |
+| `nozzle_temp_min/max` | uint16 | Nozzle temperature range (°C) |
+| `bed_temp_min/max` | uint16 | Bed temperature range (°C) |
+| `print_speed_min/max` | uint16 | Print speed range (mm/s) |
+| `fan_percent` | uint8 | Part cooling fan (0-100%) |
+| `density` | float | Material density (g/cm³) |
 | `initial_weight_g` | uint32 | Weight when first added to inventory |
 | `current_weight_g` | uint32 | Last known remaining weight |
-| `status` | enum | `"active"`, `"empty"`, `"archived"` |
-| `source` | enum | `"scan"` (from RFID tag), `"library"` (from DB selection), `"manual"` (custom entry) |
-| `created_at` | uint32 | Unix timestamp of creation |
-| `updated_at` | uint32 | Unix timestamp of last modification |
-| `weight_history` | array | Timestamped weight entries for tracking consumption over time |
+| `status` | uint8 | Enum index: 0=ACTIVE, 1=EMPTY, 2=ARCHIVED |
+| `source` | uint8 | Enum index: 0=SCAN, 1=LIBRARY, 2=MANUAL |
+| `created_at` | uint32 | Uptime seconds at creation (millis()/1000) |
+| `updated_at` | uint32 | Uptime seconds at last modification |
+| `weight_history` | array | Timestamped weight entries `{weight_g, timestamp}` |
 
 ### 6.5 InventoryManager API
 
-```
-init()                              — Load /inventory.json; create file with empty schema if missing
-save()                              — Persist full inventory to LittleFS (atomic write — see Section 6.9)
-addSpool(profile, weight, uid)      — Create new inventory record; returns spool_id
-archiveSpool(spool_id)              — Set status to "archived" (soft delete, reversible — see Section 6.10)
-deleteSpool(spool_id)               — Permanently remove spool record (irreversible — see Section 6.10)
-updateWeight(spool_id, weight)      — Update current_weight_g; append to weight_history
-getSpoolByUID(tag_uid)              — Lookup spool by RFID tag UID; returns nullptr if not found
-getSpoolById(spool_id)              — Lookup spool by internal ID
-getAllActive()                       — Return vector of active (non-archived) spools
-getSpoolCount()                     — Total number of active spools
+**Implementation:** `include/inventory_manager.h`, `src/inventory_manager.cpp`
+
+```cpp
+bool init();
+    // Recover any .tmp file (crash recovery), then load /inventory.json.
+    // Creates file with empty schema if missing. Returns true on success.
+
+bool save();
+    // Persist full inventory to LittleFS via atomicWriteJson() (Section 6.8).
+    // Clears _dirty flag on success.
+
+String addSpool(const FilamentProfile& profile, SpoolSource source, uint32_t weight_g = 1000);
+    // Create new inventory record from a FilamentProfile.
+    // Generates SPL-NNNN spool_id, copies profile fields, sets timestamps
+    // (millis()/1000), creates initial weight_history entry.
+    // Returns spool_id on success, empty string if inventory full (100 max).
+
+bool archiveSpool(const String& spool_id);
+    // Set status to ARCHIVED (soft delete, reversible — see Section 6.9).
+
+bool deleteSpool(const String& spool_id);
+    // Permanently erase spool record from cache and persist (irreversible).
+
+bool updateWeight(const String& spool_id, uint32_t new_weight_g);
+    // Update current_weight_g, append to weight_history, set updated_at.
+    // Automatically sets status to EMPTY if new_weight_g == 0.
+
+const SpoolRecord* getSpoolByUID(const String& tag_uid) const;
+    // Lookup spool by RFID tag UID. Returns nullptr if not found or tag_uid empty.
+
+const SpoolRecord* getSpoolById(const String& spool_id) const;
+    // Lookup spool by internal ID. Returns nullptr if not found.
+
+std::vector<const SpoolRecord*> getAllActive() const;
+    // Return pointers to all non-ARCHIVED spools (includes ACTIVE and EMPTY).
+
+size_t getSpoolCount() const;
+    // Total number of spools in cache (all statuses).
 ```
 
-### 6.7 Tag ↔ Inventory Reconciliation
+**Private members:**
+- `std::vector<SpoolRecord> _spools` — in-memory cache of all spool records
+- `uint32_t _nextId` — next auto-increment ID for spool generation
+- `bool _dirty` — true if cache has unsaved changes
+- `bool load()` — deserialize `/inventory.json` into cache
+- `int findIndex(const String& spool_id) const` — linear search by spool_id
+
+### 6.5.1 SpoolRecord Structure
+
+**Implementation:** `include/inventory_manager.h`
+
+```cpp
+enum class SpoolStatus : uint8_t { ACTIVE, EMPTY, ARCHIVED };
+enum class SpoolSource : uint8_t { SCAN, LIBRARY, MANUAL };
+
+struct WeightEntry {
+    uint32_t weight_g;
+    uint32_t timestamp;  // uptime seconds (millis()/1000, no RTC)
+};
+
+struct SpoolRecord {
+    String spool_id;            // "SPL-NNNN" (auto-generated)
+    String tag_uid;             // RFID tag UID, empty if local-only
+
+    // Inline profile snapshot (flat, not nested)
+    String brand;
+    String name;
+    String material_type;
+    String color_hex;           // 6 hex chars, e.g. "FF8800"
+    uint32_t diameter_um = 1750;
+    uint16_t nozzle_temp_min = 0;
+    uint16_t nozzle_temp_max = 0;
+    uint16_t bed_temp_min = 0;
+    uint16_t bed_temp_max = 0;
+    uint16_t print_speed_min = 0;
+    uint16_t print_speed_max = 0;
+    uint8_t  fan_percent = 100;
+    float    density = 1.24f;
+
+    uint32_t initial_weight_g = 1000;
+    uint32_t current_weight_g = 1000;
+
+    SpoolStatus status = SpoolStatus::ACTIVE;
+    SpoolSource source = SpoolSource::LIBRARY;
+
+    uint32_t created_at = 0;    // uptime seconds
+    uint32_t updated_at = 0;    // uptime seconds
+
+    std::vector<WeightEntry> weight_history;
+};
+
+static constexpr size_t MAX_SPOOLS = 100;
+```
+
+Note: `addSpool()` copies fields from `FilamentProfile` into the flat SpoolRecord. The current implementation maps `nozzle_temp` to both `nozzle_temp_min` and `nozzle_temp_max` (since the existing FilamentProfile struct only has a single `nozzle_temp` field — extended range fields will be populated once FilamentProfile is updated per Section 5.3).
+
+### 6.5.2 Atomic Write Utility
+
+**Implementation:** `include/atomic_write.h`
+
+Shared utility used by both `InventoryManager::save()` and `ConfigManager::save()`.
+
+```cpp
+bool atomicWriteJson(const char* path, JsonDocument& doc);
+    // 6-step atomic write:
+    // 1. Open {path}.tmp for write
+    // 2. serializeJson(doc, file) — abort if 0 bytes written
+    // 3. file.flush()
+    // 4. file.close()
+    // 5. LittleFS.remove(path) — remove original
+    // 6. LittleFS.rename("{path}.tmp", path) — promote temp
+    // Returns false (with Serial logging) on any step failure.
+
+void recoverTmpFile(const char* path);
+    // Called during init() for crash recovery:
+    // - .tmp exists + original exists → delete .tmp (write was incomplete)
+    // - .tmp exists + original missing → rename .tmp → original (write completed step 5 but not 6)
+    // - No .tmp → no-op
+```
+
+### 6.6 Tag ↔ Inventory Reconciliation
 
 When a scanned RFID tag matches an existing inventory spool (by `tag_uid`), the tag's weight (sectors 6-8) and the inventory's `current_weight_g` may disagree — for example, after the Creality K2 Plus printer updates the tag weight during a print while the inventory remains stale.
 
@@ -723,7 +852,7 @@ When a scanned RFID tag matches an existing inventory spool (by `tag_uid`), the 
 **Untagged inventory spool:**
 - Spool has no `tag_uid` (local-only, created via manual entry) → reconciliation does not apply.
 
-### 6.8 UID Uniqueness & Collision Handling
+### 6.7 UID Uniqueness & Collision Handling
 
 **Invariant:** A `tag_uid` must be unique among all **active** (non-archived) spools in the inventory. Archived spools may retain their `tag_uid` for historical reference but are excluded from UID lookups.
 
@@ -751,7 +880,7 @@ When a user writes spool data to a new/different tag:
 **"Unlink Tag" action (Spool Detail screen):**
 Clears the spool's `tag_uid` to empty string, making it a local-only spool. The physical tag remains unchanged but will be treated as a new/unrecognized tag on next scan.
 
-### 6.9 Save Atomicity
+### 6.8 Save Atomicity
 
 Inventory is the most critical persistent data on the device — losing it means losing all spool records and weight history. A raw overwrite (`open → write → close`) risks corruption if power is lost mid-write. All inventory writes use atomic replace semantics.
 
@@ -792,7 +921,7 @@ After every successful atomic save to LittleFS, a timestamped backup is written 
 - `/material_database.json.gz` (Section 5.6, step 9)
 - `/config.json` (lower risk due to small size, but same pattern for consistency)
 
-### 6.10 Archive vs Delete Behavior
+### 6.9 Archive vs Delete Behavior
 
 Two distinct removal operations with different consequences:
 
@@ -802,7 +931,7 @@ Two distinct removal operations with different consequences:
 |--------|----------|
 | **Action** | `archiveSpool(spool_id)` sets `status` to `"archived"`, sets `updated_at` to current timestamp (NTP or uptime) |
 | **Inventory JSON** | Spool record **remains** in `/inventory.json` with `status: "archived"` |
-| **UID association** | `tag_uid` **retained** on the archived record. Excluded from active UID lookups but available for reactivation (see Section 6.8 "Archived spool rescanned"). |
+| **UID association** | `tag_uid` **retained** on the archived record. Excluded from active UID lookups but available for reactivation (see Section 6.7 "Archived spool rescanned"). |
 | **SD usage history** | Unchanged — all prior entries in `/logs/usage_YYYYMMDD.csv` preserved |
 | **RAM cache** | Record remains in `std::vector<SpoolRecord>` but filtered out of `getAllActive()` |
 | **Reversibility** | Fully reversible — scanning the linked tag or a future "Unarchive" action sets status back to `"active"` |
@@ -815,11 +944,11 @@ Two distinct removal operations with different consequences:
 |--------|----------|
 | **Action** | `deleteSpool(spool_id)` permanently removes the record from the inventory cache |
 | **Inventory JSON** | Spool record **removed** from `/inventory.json` on next `save()` |
-| **UID association** | Cleared — the physical tag becomes unrecognized. Scanning it will trigger the "new tag" flow (Section 6.7). |
+| **UID association** | Cleared — the physical tag becomes unrecognized. Scanning it will trigger the "new tag" flow (Section 6.6). |
 | **SD usage history** | **Preserved** — entries in `/logs/usage_YYYYMMDD.csv` are never deleted (append-only log). The `spool_id` in the log remains as a historical reference even though the inventory record is gone. |
 | **SD deletion record** | A deletion event is appended to the usage log: `{spool_id}, DELETED, {timestamp}` |
 | **RAM cache** | Record removed from `std::vector<SpoolRecord>` |
-| **Reversibility** | **Irreversible** from the device. Recovery only possible by restoring an SD card backup (Section 6.9). |
+| **Reversibility** | **Irreversible** from the device. Recovery only possible by restoring an SD card backup (Section 6.8). |
 | **UI visibility** | Gone from all views |
 | **Confirmation** | **Two-step confirmation required:** first tap shows dialog "Permanently delete '{name}'? This cannot be undone." → [Delete] / [Cancel]. Destructive button styled red. |
 
@@ -829,7 +958,7 @@ The UI should make the distinction clear:
 - **Archive** button: normal styling, labeled "Archive" — for spools you're done with but might reuse
 - **Delete** button: red/destructive styling, labeled "Delete" — for spools added by mistake or duplicates
 
-### 6.6 Memory Strategy
+### 6.10 Memory Strategy
 - Full inventory JSON loaded into PSRAM during `init()`
 - Parsed into `std::vector<SpoolRecord>` cache in RAM
 - JSON document discarded after load
@@ -1273,7 +1402,7 @@ WiFi Setup → Settings             (connected / cancelled)
 
 **Behavior:**
 - Tap row → navigate to Spool Detail
-- Scan Tag → initiate RFID read → if tag found in inventory, check weight reconciliation (Section 6.7) then show detail; if new, auto-add to inventory with `source: "scan"`
+- Scan Tag → initiate RFID read → if tag found in inventory, check weight reconciliation (Section 6.6) then show detail; if new, auto-add to inventory with `source: "scan"`
 - Add Custom → navigate to Custom Entry screen
 - List supports scrolling for large inventories
 
@@ -1290,10 +1419,10 @@ WiFi Setup → Settings             (connected / cancelled)
 
 **Behavior:**
 - Update Weight → opens number input dialog; value saved to inventory with timestamp
-- Write to Tag → navigates to main/write screen pre-populated with this spool's data; if target tag UID differs from spool's current UID, reassigns (see Section 6.8)
-- Unlink Tag → clears `tag_uid` from spool, making it local-only (see Section 6.8). Only shown if spool has a linked tag.
-- Archive → see Section 6.10 for full archive behavior
-- Delete → see Section 6.10 for full delete behavior
+- Write to Tag → navigates to main/write screen pre-populated with this spool's data; if target tag UID differs from spool's current UID, reassigns (see Section 6.7)
+- Unlink Tag → clears `tag_uid` from spool, making it local-only (see Section 6.7). Only shown if spool has a linked tag.
+- Archive → see Section 6.9 for full archive behavior
+- Delete → see Section 6.9 for full delete behavior
 
 ### 11.5 Custom Entry Screen
 
@@ -1927,7 +2056,7 @@ These features protect against data loss and corruption. They must be implemente
 
 | # | Feature | FSD Section | Depends On | Deliverable |
 |---|---------|-------------|------------|-------------|
-| P0.1 | **Inventory atomic save** | 6.9 | LittleFS | `write .tmp → fsync → remove old → rename` pattern in `InventoryManager::save()` |
+| P0.1 | **Inventory atomic save** ✅ | 6.8, 6.5.2 | LittleFS | `atomicWriteJson()` in `include/atomic_write.h`; `InventoryManager` in `include/inventory_manager.h` + `src/inventory_manager.cpp`; `ConfigManager` retrofitted. **Implemented.** |
 | P0.2 | **CRC-32 definition** | 7.6 | rfid_driver | `computeCRC32()` using IEEE 802.3 polynomial; validate on read, recompute on write |
 | P0.3 | **Mirror voting** | 7.8 | P0.2 | `readMirrors()` with 3-way comparison, majority selection, disagreement logging |
 | P0.4 | **Database max size guard** | 14.2 | network_manager | `Content-Length` check (512 KB max) before download; reject oversized responses |
@@ -1952,7 +2081,7 @@ These deliver the primary user-facing features. Implement after P0 is solid.
 | P1.5 | **Custom spool entry** (multi-step form) | 11.6 | P1.2 |
 | P1.6 | **Extended tag write** (v2 sectors 10-13) | 7.5 | P0.7, P1.1 |
 | P1.7 | **UID collision handling** | 6.8 | P1.2 |
-| P1.8 | **Archive vs delete** | 6.10 | P1.2 |
+| P1.8 | **Archive vs delete** | 6.9 | P1.2 |
 | P1.9 | **Operation lock & UI guards** | 12.5 | P0.5 |
 | P1.10 | **Database update flow** (SHA-256 hash, schema validation) | 5.6 | P0.4 |
 | P1.11 | **Feedback module** (buzzer + LEDs) | 9 | CH422G driver |
@@ -1970,7 +2099,7 @@ Polish and resilience. Implement as time allows; system is functional without th
 | P2.5 | Memory budget monitoring (runtime heap logging) | 14.1 | — |
 | P2.6 | String length enforcement (truncation on parse/display) | 14.2 | — |
 | P2.7 | Battery monitoring & low-battery state | 16 (Future) | GPIO6 ADC (Sensor AD header) |
-| P2.8 | Save atomicity for config.json | — | P0.1 pattern |
+| P2.8 | Save atomicity for config.json ✅ | 6.5.2 | P0.1 pattern | **Implemented.** `ConfigManager::save()` uses `atomicWriteJson()`; `init()` calls `recoverTmpFile()`. |
 
 ---
 
@@ -2009,8 +2138,10 @@ Polish and resilience. Implement as time allows; system is functional without th
 
 ## 18. Status
 
-**Document Status:** Draft (v2.2)
+**Document Status:** Draft (v2.3)
 
 This FSD reflects the planned architecture for the filament inventory management system, extending the original RFID read/write tool with spool cataloging, usage tracking, custom spool creation, dual-storage architecture (LittleFS + SD card), and manual filament database updates from Creality printers via HTTP.
+
+v2.3 aligns Section 6 (Inventory Database) with the P0.1 implementation: flat JSON schema matching actual `SpoolRecord` serialization, actual `InventoryManager` API signatures with `SpoolSource` parameter, `SpoolRecord`/`WeightEntry` struct definitions (Section 6.5.1), `atomicWriteJson()`/`recoverTmpFile()` utility documentation (Section 6.5.2), uptime-second timestamps (no RTC), and `uint8_t` enum storage for status/source. Marks P0.1 and P2.8 as implemented in Section 15.
 
 v2.2 adds implementation phasing (Section 15), formal hard limits for all string/numeric fields (Section 14.2), TagData struct and data model separation (Sections 3.2, 7.9), and I2C bus recovery procedures (Section 13.7).

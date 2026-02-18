@@ -12,6 +12,7 @@
 #include <ui/ui_manager.h>
 #include <system_state.h>
 #include <config_manager.h>
+#include <inventory_manager.h>
 #include <filament_db.h>
 #include <network_manager.h>
 #include <ui/screens/screen_about.h>
@@ -60,6 +61,7 @@ void setup() {
 
     sysState.init();
     config.init();
+    inventory.init();
 
     ui.init();
     screenAbout.init(); // Initialize the About screen widgets
