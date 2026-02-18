@@ -2057,12 +2057,12 @@ These features protect against data loss and corruption. They must be implemente
 | # | Feature | FSD Section | Depends On | Deliverable |
 |---|---------|-------------|------------|-------------|
 | P0.1 | **Inventory atomic save** ✅ | 6.8, 6.5.2 | LittleFS | `atomicWriteJson()` in `include/atomic_write.h`; `InventoryManager` in `include/inventory_manager.h` + `src/inventory_manager.cpp`; `ConfigManager` retrofitted. **Implemented.** |
-| P0.2 | **CRC-32 definition** | 7.6 | rfid_driver | `computeCRC32()` using IEEE 802.3 polynomial; validate on read, recompute on write |
-| P0.3 | **Mirror voting** | 7.8 | P0.2 | `readMirrors()` with 3-way comparison, majority selection, disagreement logging |
-| P0.4 | **Database max size guard** | 14.2 | network_manager | `Content-Length` check (512 KB max) before download; reject oversized responses |
-| P0.5 | **ERROR state semantics** | 12.4 | system_state, ui_manager | Error dialog with per-error timeout table, retry/dismiss behavior, `USER_RETRY`/`USER_DISMISS` events |
-| P0.6 | **Tag ↔ inventory reconciliation** | 6.7 | P0.3, inventory_manager | Weight comparison on scan (±5g tolerance), prompt on mismatch, user chooses tag vs inventory value |
-| P0.7 | **Unknown/foreign v2 tag handling** | 7.5 (origin detection) | P0.2, rfid_driver | Check origin magic (`0x4B324658`); refuse to overwrite sectors 10-13 on foreign tags; warn user |
+| P0.2 | **CRC-32 definition** ✅ | 7.6 | rfid_driver | `computeCRC32()` using `esp_rom_crc32_le`; `validateTagCRC()`, `readTagCRC32()`, `writeTagCRC32()` in `rfid_driver`. **Implemented.** |
+| P0.3 | **Mirror voting** ✅ | 7.8 | P0.2 | `readMirrors()` with 3-way byte comparison, majority selection; `writeMirrors()` with ordered write (6→7→8) + read-back verify. **Implemented.** |
+| P0.4 | **Database max size guard** ✅ | 14.2 | network_manager | `Content-Length` check + streaming size cap (512 KB); atomic temp-file replace; `getLastError()` accessor. **Implemented.** |
+| P0.5 | **ERROR state semantics** ✅ | 12.4 | system_state, ui_manager | Full state machine with `ErrorContext`, per-error timeouts, `USER_RETRY` returns to `failed_state`. **Implemented.** |
+| P0.6 | **Tag ↔ inventory reconciliation** ✅ | 6.7 | P0.3, inventory_manager | `formatUID()`, `reconcileWeight()` (±5g tolerance), `linkTagUID()` for binding tags to spools. **Implemented.** |
+| P0.7 | **Unknown/foreign v2 tag handling** ✅ | 7.5 (origin detection) | P0.2, rfid_driver | `readTagVersion()`, `readTagVersionInfo()` with K2FX origin magic detection. **Implemented.** |
 
 **Implementation order:** P0.1 → P0.2 → P0.3 → P0.4 → P0.5 → P0.6 → P0.7
 
@@ -2138,9 +2138,11 @@ Polish and resilience. Implement as time allows; system is functional without th
 
 ## 18. Status
 
-**Document Status:** Draft (v2.3)
+**Document Status:** Draft (v2.4)
 
 This FSD reflects the planned architecture for the filament inventory management system, extending the original RFID read/write tool with spool cataloging, usage tracking, custom spool creation, dual-storage architecture (LittleFS + SD card), and manual filament database updates from Creality printers via HTTP.
+
+v2.4 marks the entire P0 tier as complete (P0.1–P0.7). P0.2: CRC-32 using ESP32 ROM `esp_rom_crc32_le`. P0.3: mirror voting with 3-way comparison and ordered writes. P0.4: 512 KB database size guard with streaming cap and atomic replace. P0.5: full state machine with ErrorContext, retry/dismiss, per-error timeouts. P0.6: UID formatting, weight reconciliation (±5g tolerance), tag↔inventory binding. P0.7: tag version detection and K2FX origin magic check for foreign v2 tags.
 
 v2.3 aligns Section 6 (Inventory Database) with the P0.1 implementation: flat JSON schema matching actual `SpoolRecord` serialization, actual `InventoryManager` API signatures with `SpoolSource` parameter, `SpoolRecord`/`WeightEntry` struct definitions (Section 6.5.1), `atomicWriteJson()`/`recoverTmpFile()` utility documentation (Section 6.5.2), uptime-second timestamps (no RTC), and `uint8_t` enum storage for status/source. Marks P0.1 and P2.8 as implemented in Section 15.
 
