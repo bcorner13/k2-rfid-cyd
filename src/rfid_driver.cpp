@@ -1,4 +1,5 @@
-#include <rfid_driver.h> // Updated include path
+#include <rfid_driver.h>
+#include <esp_rom_crc.h>
 
 // Define pins for PN532
 #define PN532_IRQ   (1)
@@ -10,7 +11,10 @@ const uint8_t RFIDDriver::STD_KEY[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 const uint8_t RFIDDriver::U_KEY[16] = {0x43, 0x46, 0x53, 0x76, 0x31, 0x45, 0x4D, 0x55, 0x4C, 0x41, 0x54, 0x4F, 0x52, 0x31, 0x33, 0x37};
 const uint8_t RFIDDriver::D_KEY[16] = {0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37};
 
-RFIDDriver::RFIDDriver() : nfc(nullptr) {}
+RFIDDriver::RFIDDriver() : nfc(nullptr), currentUidLen(0), keyACached(false) {
+    memset(currentUid, 0, sizeof(currentUid));
+    memset(cachedKeyA, 0, sizeof(cachedKeyA));
+}
 
 void RFIDDriver::init() {
     nfc = new Adafruit_PN532(PN532_IRQ, PN532_RESET);
@@ -26,6 +30,7 @@ uint32_t RFIDDriver::getFirmwareVersion() {
 
 bool RFIDDriver::checkTagPresent() {
     if (!nfc) return false;
+    keyACached = false;
     return nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, currentUid, &currentUidLen, 50);
 }
 
@@ -33,14 +38,161 @@ void RFIDDriver::haltTag() {
     // No direct equivalent in Adafruit library, but this is good practice
 }
 
+// ---------------------------------------------------------------------------
+// CRC-32 (IEEE 802.3 / zlib-compatible)
+// Uses ESP32 ROM hardware-accelerated CRC. The ROM function uses an inverted
+// initial value convention: we pass ~0 (0xFFFFFFFF) and invert the result,
+// matching the standard CRC-32/ISO-HDLC algorithm (poly 0xEDB88320,
+// init 0xFFFFFFFF, final XOR 0xFFFFFFFF, reflected I/O).
+// ---------------------------------------------------------------------------
+uint32_t RFIDDriver::computeCRC32(const uint8_t* data, size_t length) {
+    return ~esp_rom_crc32_le(~0U, data, length);
+}
+
+// ---------------------------------------------------------------------------
+// Sector authentication helper — caches Key A from UID
+// ---------------------------------------------------------------------------
+bool RFIDDriver::authenticateSector(uint8_t sector) {
+    if (!nfc) return false;
+
+    if (!keyACached) {
+        generateKeyA(currentUid, cachedKeyA);
+        keyACached = true;
+    }
+
+    // First block of the sector
+    uint8_t firstBlock = sector * BLOCKS_PER_SECTOR;
+    return nfc->mifareclassic_AuthenticateBlock(
+        currentUid, currentUidLen, firstBlock, 0, cachedKeyA);
+}
+
+// ---------------------------------------------------------------------------
+// Read data blocks (blocks 0-2, skipping trailer) from a range of sectors
+// into a flat buffer. Returns total bytes read, or 0 on any failure.
+// ---------------------------------------------------------------------------
+size_t RFIDDriver::readSectorRange(uint8_t firstSector, uint8_t lastSector, uint8_t* outBuf) {
+    size_t offset = 0;
+
+    for (uint8_t sector = firstSector; sector <= lastSector; sector++) {
+        if (!authenticateSector(sector)) {
+            Serial.printf("Auth failed for sector %u\n", sector);
+            return 0;
+        }
+
+        uint8_t firstBlock = sector * BLOCKS_PER_SECTOR;
+        for (uint8_t b = 0; b < DATA_BLOCKS_PER_SECTOR; b++) {
+            if (!nfc->mifareclassic_ReadDataBlock(firstBlock + b, outBuf + offset)) {
+                Serial.printf("Read failed: sector %u block %u\n", sector, b);
+                return 0;
+            }
+            offset += BYTES_PER_BLOCK;
+        }
+    }
+
+    return offset;
+}
+
+// ---------------------------------------------------------------------------
+// Read stored CRC32 from sector 15, block 60 (first data block of sector 15)
+// ---------------------------------------------------------------------------
+uint32_t RFIDDriver::readTagCRC32() {
+    if (!authenticateSector(SECTOR_CONTROL)) {
+        Serial.println("Auth failed for control sector 15");
+        return 0;
+    }
+
+    uint8_t block[BYTES_PER_BLOCK];
+    uint8_t controlBlock = SECTOR_CONTROL * BLOCKS_PER_SECTOR;  // block 60
+    if (!nfc->mifareclassic_ReadDataBlock(controlBlock, block)) {
+        Serial.println("Read failed for control block 60");
+        return 0;
+    }
+
+    // CRC32 is stored little-endian at offset 0
+    uint32_t stored = block[0] | (block[1] << 8) | (block[2] << 16) | (block[3] << 24);
+    return stored;
+}
+
+// ---------------------------------------------------------------------------
+// Validate tag CRC: read sector data, compute CRC, compare to stored value.
+// tagVersion: TAG_VERSION_V1 (0x01) or TAG_VERSION_V2 (0x02)
+// ---------------------------------------------------------------------------
+bool RFIDDriver::validateTagCRC(uint8_t tagVersion, uint32_t& computedCRC, uint32_t& storedCRC) {
+    uint8_t lastSector = (tagVersion >= TAG_VERSION_V2) ? CRC_V2_LAST_SECTOR : CRC_V1_LAST_SECTOR;
+    size_t numSectors = lastSector - CRC_V1_FIRST_SECTOR + 1;
+    size_t bufSize = numSectors * DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK;
+
+    uint8_t* buf = (uint8_t*)malloc(bufSize);
+    if (!buf) {
+        Serial.println("CRC validate: malloc failed");
+        return false;
+    }
+
+    size_t bytesRead = readSectorRange(CRC_V1_FIRST_SECTOR, lastSector, buf);
+    if (bytesRead == 0) {
+        free(buf);
+        return false;
+    }
+
+    computedCRC = computeCRC32(buf, bytesRead);
+    free(buf);
+
+    storedCRC = readTagCRC32();
+
+    bool valid = (computedCRC == storedCRC);
+    Serial.printf("CRC: computed=0x%08X stored=0x%08X %s\n",
+                  computedCRC, storedCRC, valid ? "OK" : "MISMATCH");
+    return valid;
+}
+
+// ---------------------------------------------------------------------------
+// Write CRC32 to sector 15, block 60
+// ---------------------------------------------------------------------------
+bool RFIDDriver::writeTagCRC32(uint32_t crc) {
+    if (!authenticateSector(SECTOR_CONTROL)) {
+        Serial.println("Auth failed for control sector 15 (write)");
+        return false;
+    }
+
+    uint8_t block[BYTES_PER_BLOCK];
+    memset(block, 0, sizeof(block));
+
+    // Store little-endian
+    block[0] = (crc >>  0) & 0xFF;
+    block[1] = (crc >>  8) & 0xFF;
+    block[2] = (crc >> 16) & 0xFF;
+    block[3] = (crc >> 24) & 0xFF;
+
+    uint8_t controlBlock = SECTOR_CONTROL * BLOCKS_PER_SECTOR;  // block 60
+    if (!nfc->mifareclassic_WriteDataBlock(controlBlock, block)) {
+        Serial.println("Write failed for control block 60");
+        return false;
+    }
+
+    // Read back and verify
+    uint8_t verify[BYTES_PER_BLOCK];
+    if (!nfc->mifareclassic_ReadDataBlock(controlBlock, verify)) {
+        Serial.println("Verify read failed for control block 60");
+        return false;
+    }
+
+    if (memcmp(block, verify, BYTES_PER_BLOCK) != 0) {
+        Serial.println("CRC write verification failed");
+        return false;
+    }
+
+    Serial.printf("CRC32 written: 0x%08X\n", crc);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// CFS Tag Read (skeleton — reads block 4 for now)
+// ---------------------------------------------------------------------------
 bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
     if (!nfc || !checkTagPresent()) return false;
 
-    uint8_t keyA[6];
-    generateKeyA(currentUid, keyA);
-
-    if (!nfc->mifareclassic_AuthenticateBlock(currentUid, currentUidLen, 4, 0, keyA)) {
-        Serial.println("Auth failed for block 4");
+    if (!authenticateSector(SECTOR_FORMAT)) {
+        Serial.println("Auth failed for sector 1");
         return false;
     }
 
@@ -53,12 +205,18 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// CFS Tag Write (skeleton)
+// ---------------------------------------------------------------------------
 bool RFIDDriver::writeCFSTag(const SpoolData& spoolData) {
     if (!nfc || !checkTagPresent()) return false;
 
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Key A derivation from UID via AES-128
+// ---------------------------------------------------------------------------
 void RFIDDriver::generateKeyA(const uint8_t* uid, uint8_t* keyOut) {
     mbedtls_aes_context aes;
     mbedtls_aes_init(&aes);
