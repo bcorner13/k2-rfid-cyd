@@ -186,6 +186,124 @@ bool RFIDDriver::writeTagCRC32(uint32_t crc) {
 }
 
 // ---------------------------------------------------------------------------
+// Mirror voting: read sectors 6-8, 3-way byte compare, majority select
+// Per FSD Section 7.8
+// ---------------------------------------------------------------------------
+MirrorResult RFIDDriver::readMirrors() {
+    MirrorResult result;
+    memset(&result, 0, sizeof(result));
+    result.badMirror = -1;
+
+    // Read data blocks from each mirror sector (3 data blocks × 16 bytes = 48 bytes each)
+    static constexpr size_t MIRROR_SIZE = DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK;  // 48 bytes
+    uint8_t m0[MIRROR_SIZE], m1[MIRROR_SIZE], m2[MIRROR_SIZE];
+
+    size_t r0 = readSectorRange(SECTOR_REMAINING_MAIN, SECTOR_REMAINING_MAIN, m0);
+    size_t r1 = readSectorRange(SECTOR_REMAINING_A, SECTOR_REMAINING_A, m1);
+    size_t r2 = readSectorRange(SECTOR_REMAINING_B, SECTOR_REMAINING_B, m2);
+
+    if (r0 == 0 || r1 == 0 || r2 == 0) {
+        Serial.println("Mirror read: failed to read one or more mirror sectors");
+        result.valid = false;
+        result.agreement = 0;
+        return result;
+    }
+
+    // Compare first block of each mirror (RemainingBlock is 16 bytes in block 0)
+    bool eq01 = (memcmp(m0, m1, BYTES_PER_BLOCK) == 0);
+    bool eq02 = (memcmp(m0, m2, BYTES_PER_BLOCK) == 0);
+    bool eq12 = (memcmp(m1, m2, BYTES_PER_BLOCK) == 0);
+
+    const uint8_t* chosen = nullptr;
+
+    if (eq01 && eq02) {
+        // All three match — unanimous
+        result.agreement = 3;
+        result.badMirror = -1;
+        chosen = m0;
+        Serial.println("Mirrors: unanimous (3/3)");
+    } else if (eq01) {
+        // M0 == M1, M2 differs
+        result.agreement = 2;
+        result.badMirror = 2;
+        chosen = m0;
+        Serial.println("Mirrors: majority (2/3), sector 8 differs");
+    } else if (eq02) {
+        // M0 == M2, M1 differs
+        result.agreement = 2;
+        result.badMirror = 1;
+        chosen = m0;
+        Serial.println("Mirrors: majority (2/3), sector 7 differs");
+    } else if (eq12) {
+        // M1 == M2, M0 differs
+        result.agreement = 2;
+        result.badMirror = 0;
+        chosen = m1;
+        Serial.println("Mirrors: majority (2/3), sector 6 differs");
+    } else {
+        // All three differ
+        result.agreement = 0;
+        result.badMirror = -1;
+        result.valid = false;
+        Serial.println("Mirrors: ALL DIFFER — tag corrupt");
+        return result;
+    }
+
+    // Copy the resolved RemainingBlock from the first data block
+    memcpy(&result.data, chosen, sizeof(RemainingBlock));
+    result.valid = true;
+
+    Serial.printf("Mirror result: remain=%umm %ug, counter=%u\n",
+                  result.data.remain_len_mm, result.data.remain_weight_g,
+                  result.data.update_counter);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Write RemainingBlock to all 3 mirror sectors (6→7→8) with read-back verify.
+// Write order per FSD 7.8: sector 6 → 7 → 8 for safe recovery on power loss.
+// ---------------------------------------------------------------------------
+bool RFIDDriver::writeMirrors(const RemainingBlock& data) {
+    // Prepare a full block (16 bytes)
+    uint8_t block[BYTES_PER_BLOCK];
+    memset(block, 0, sizeof(block));
+    memcpy(block, &data, sizeof(RemainingBlock));
+
+    const uint8_t mirrorSectors[] = {
+        SECTOR_REMAINING_MAIN, SECTOR_REMAINING_A, SECTOR_REMAINING_B
+    };
+
+    for (uint8_t sector : mirrorSectors) {
+        if (!authenticateSector(sector)) {
+            Serial.printf("Mirror write: auth failed for sector %u\n", sector);
+            return false;
+        }
+
+        uint8_t firstBlock = sector * BLOCKS_PER_SECTOR;
+        if (!nfc->mifareclassic_WriteDataBlock(firstBlock, block)) {
+            Serial.printf("Mirror write: write failed for sector %u\n", sector);
+            return false;
+        }
+
+        // Read back and verify
+        uint8_t verify[BYTES_PER_BLOCK];
+        if (!nfc->mifareclassic_ReadDataBlock(firstBlock, verify)) {
+            Serial.printf("Mirror write: verify read failed for sector %u\n", sector);
+            return false;
+        }
+
+        if (memcmp(block, verify, BYTES_PER_BLOCK) != 0) {
+            Serial.printf("Mirror write: verify mismatch for sector %u\n", sector);
+            return false;
+        }
+    }
+
+    Serial.printf("Mirrors written: %umm %ug counter=%u\n",
+                  data.remain_len_mm, data.remain_weight_g, data.update_counter);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // CFS Tag Read (skeleton — reads block 4 for now)
 // ---------------------------------------------------------------------------
 bool RFIDDriver::readCFSTag(SpoolData& spoolData) {

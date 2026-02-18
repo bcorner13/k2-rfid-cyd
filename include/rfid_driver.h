@@ -13,6 +13,14 @@
 #include "spool_data.h"
 #include "k2_tag.h"
 
+// Mirror voting result for sectors 6-8
+struct MirrorResult {
+    RemainingBlock data;        // Resolved remaining filament data
+    uint8_t agreement;          // 3 = unanimous, 2 = majority, 0 = all differ
+    int8_t  badMirror;          // Index of disagreeing mirror (0-2), -1 if unanimous or all differ
+    bool    valid;              // true if data is usable (agreement >= 2)
+};
+
 class RFIDDriver {
 public:
     RFIDDriver();
@@ -43,6 +51,13 @@ public:
 
     /** Write CRC32 to sector 15 control block. */
     bool writeTagCRC32(uint32_t crc);
+
+    /** Read sectors 6-8 and perform majority voting per FSD 7.8.
+     *  Returns MirrorResult with resolved data and agreement status. */
+    MirrorResult readMirrors();
+
+    /** Write RemainingBlock to all 3 mirror sectors (6→7→8) with read-back verify. */
+    bool writeMirrors(const RemainingBlock& data);
 
     // Expose UID for external use (tag ↔ inventory reconciliation)
     const uint8_t* getUID() const { return currentUid; }
