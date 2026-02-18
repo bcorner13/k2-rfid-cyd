@@ -75,6 +75,9 @@ public:
     bool deleteSpool(const String& spool_id);
     bool updateWeight(const String& spool_id, uint32_t new_weight_g);
 
+    /** P0.6: Link a tag UID to an existing spool (for tag ↔ inventory binding). */
+    bool linkTagUID(const String& spool_id, const String& tag_uid);
+
     const SpoolRecord* getSpoolByUID(const String& tag_uid) const;
     const SpoolRecord* getSpoolById(const String& spool_id) const;
     std::vector<const SpoolRecord*> getAllActive() const;

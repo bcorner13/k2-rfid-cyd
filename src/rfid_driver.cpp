@@ -304,6 +304,108 @@ bool RFIDDriver::writeMirrors(const RemainingBlock& data) {
 }
 
 // ---------------------------------------------------------------------------
+// P0.6: Format UID as colon-separated hex string
+// ---------------------------------------------------------------------------
+String RFIDDriver::formatUID() const {
+    if (currentUidLen == 0) return "";
+
+    String result;
+    result.reserve(currentUidLen * 3);  // "XX:XX:XX:XX" + null
+    char hex[4];
+    for (uint8_t i = 0; i < currentUidLen; i++) {
+        if (i > 0) result += ':';
+        snprintf(hex, sizeof(hex), "%02X", currentUid[i]);
+        result += hex;
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// P0.6: Weight reconciliation — compare tag vs inventory with ±5g tolerance
+// ---------------------------------------------------------------------------
+WeightReconcileResult RFIDDriver::reconcileWeight(uint32_t tag_weight_g, uint32_t inventory_weight_g) {
+    WeightReconcileResult r;
+    r.tag_weight_g = tag_weight_g;
+    r.inventory_weight_g = inventory_weight_g;
+    r.delta_g = static_cast<int32_t>(tag_weight_g) - static_cast<int32_t>(inventory_weight_g);
+
+    int32_t abs_delta = (r.delta_g < 0) ? -r.delta_g : r.delta_g;
+    r.in_sync = (static_cast<uint32_t>(abs_delta) <= WEIGHT_TOLERANCE_G);
+
+    Serial.printf("Reconcile: tag=%ug inv=%ug delta=%dg %s\n",
+                  tag_weight_g, inventory_weight_g, r.delta_g,
+                  r.in_sync ? "IN_SYNC" : "MISMATCH");
+    return r;
+}
+
+// ---------------------------------------------------------------------------
+// P0.7: Read tag version byte from sector 1 (format block)
+// ---------------------------------------------------------------------------
+uint8_t RFIDDriver::readTagVersion() {
+    if (!authenticateSector(SECTOR_FORMAT)) {
+        Serial.println("readTagVersion: auth failed for sector 1");
+        return 0;
+    }
+
+    uint8_t block[BYTES_PER_BLOCK];
+    uint8_t firstBlock = SECTOR_FORMAT * BLOCKS_PER_SECTOR;  // block 4
+    if (!nfc->mifareclassic_ReadDataBlock(firstBlock, block)) {
+        Serial.println("readTagVersion: read failed for block 4");
+        return 0;
+    }
+
+    // Interpret as TagFormatBlock — version is at offset 4
+    TagFormatBlock* fmt = reinterpret_cast<TagFormatBlock*>(block);
+    if (fmt->magic != K2_MAGIC) {
+        Serial.printf("readTagVersion: bad magic 0x%08X (expected 0x%08X)\n", fmt->magic, K2_MAGIC);
+        return 0;
+    }
+
+    Serial.printf("Tag version: %u\n", fmt->version);
+    return fmt->version;
+}
+
+// ---------------------------------------------------------------------------
+// P0.7: Full version info including v2 origin detection
+// ---------------------------------------------------------------------------
+TagVersionInfo RFIDDriver::readTagVersionInfo() {
+    TagVersionInfo info;
+    memset(&info, 0, sizeof(info));
+
+    info.version = readTagVersion();
+    info.is_v2 = (info.version >= TAG_VERSION_V2);
+
+    if (!info.is_v2) {
+        // v1 tag — no extended sectors to check
+        return info;
+    }
+
+    // Read sector 10, block 0 to get origin_magic from ExtTempBlock
+    if (!authenticateSector(SECTOR_EXT_TEMPS)) {
+        Serial.println("readTagVersionInfo: auth failed for sector 10");
+        // Still report v2, just can't confirm origin
+        return info;
+    }
+
+    uint8_t block[BYTES_PER_BLOCK];
+    uint8_t firstBlock = SECTOR_EXT_TEMPS * BLOCKS_PER_SECTOR;
+    if (!nfc->mifareclassic_ReadDataBlock(firstBlock, block)) {
+        Serial.println("readTagVersionInfo: read failed for sector 10 block 0");
+        return info;
+    }
+
+    // ExtTempBlock: origin_magic is at offset 12 (after 6 × uint16_t)
+    ExtTempBlock* temp = reinterpret_cast<ExtTempBlock*>(block);
+    info.origin_magic = temp->origin_magic;
+    info.is_our_v2 = (info.origin_magic == K2FX_MAGIC);
+
+    Serial.printf("V2 origin: magic=0x%08X %s\n",
+                  info.origin_magic,
+                  info.is_our_v2 ? "(ours)" : "(FOREIGN)");
+    return info;
+}
+
+// ---------------------------------------------------------------------------
 // CFS Tag Read (skeleton — reads block 4 for now)
 // ---------------------------------------------------------------------------
 bool RFIDDriver::readCFSTag(SpoolData& spoolData) {

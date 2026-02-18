@@ -21,6 +21,24 @@ struct MirrorResult {
     bool    valid;              // true if data is usable (agreement >= 2)
 };
 
+// P0.6: Weight reconciliation result
+static constexpr uint32_t WEIGHT_TOLERANCE_G = 5;  // ±5g tolerance
+
+struct WeightReconcileResult {
+    uint32_t tag_weight_g;
+    uint32_t inventory_weight_g;
+    int32_t  delta_g;           // tag - inventory (signed)
+    bool     in_sync;           // abs(delta) <= WEIGHT_TOLERANCE_G
+};
+
+// P0.7: Tag version info
+struct TagVersionInfo {
+    uint8_t  version;           // TAG_VERSION_V1 or TAG_VERSION_V2, 0 on read failure
+    bool     is_v2;
+    bool     is_our_v2;         // true if origin_magic == K2FX_MAGIC (we wrote it)
+    uint32_t origin_magic;      // raw magic from sector 10, 0 if not v2
+};
+
 class RFIDDriver {
 public:
     RFIDDriver();
@@ -62,6 +80,18 @@ public:
     // Expose UID for external use (tag ↔ inventory reconciliation)
     const uint8_t* getUID() const { return currentUid; }
     uint8_t getUIDLength() const { return currentUidLen; }
+
+    // P0.6: Format UID as colon-separated hex string (e.g. "04:A3:2B:1C")
+    String formatUID() const;
+
+    // P0.6: Compare tag weight vs inventory weight with ±5g tolerance
+    static WeightReconcileResult reconcileWeight(uint32_t tag_weight_g, uint32_t inventory_weight_g);
+
+    // P0.7: Read tag version from sector 1 format block
+    uint8_t readTagVersion();
+
+    // P0.7: Read version + check v2 origin magic from sector 10
+    TagVersionInfo readTagVersionInfo();
 
 private:
     Adafruit_PN532* nfc;

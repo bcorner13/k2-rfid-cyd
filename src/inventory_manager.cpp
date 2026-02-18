@@ -218,6 +218,16 @@ bool InventoryManager::deleteSpool(const String& spool_id) {
     return save();
 }
 
+bool InventoryManager::linkTagUID(const String& spool_id, const String& tag_uid) {
+    int idx = findIndex(spool_id);
+    if (idx < 0) return false;
+
+    _spools[idx].tag_uid = tag_uid;
+    _spools[idx].updated_at = millis() / 1000;
+    Serial.printf("Linked tag %s to spool %s\n", tag_uid.c_str(), spool_id.c_str());
+    return save();
+}
+
 bool InventoryManager::updateWeight(const String& spool_id, uint32_t new_weight_g) {
     int idx = findIndex(spool_id);
     if (idx < 0) return false;
