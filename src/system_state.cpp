@@ -1,12 +1,14 @@
 #include "system_state.h"
-#include <Arduino.h>
 
 StateMachine sysState;
 
-StateMachine::StateMachine() : currentState(SystemState::BOOT) {}
+StateMachine::StateMachine() : currentState(SystemState::BOOT) {
+    _errorCtx.failed_state = SystemState::IDLE;
+    _errorCtx.auto_dismiss_ms = 0;
+    _errorCtx.retryable = false;
+}
 
 void StateMachine::init() {
-    // Initial setup logic if needed
     transitionTo(SystemState::IDLE);
 }
 
@@ -16,58 +18,134 @@ SystemState StateMachine::getCurrentState() const {
 
 const char* StateMachine::getStateName() const {
     switch (currentState) {
-        case SystemState::BOOT: return "BOOT";
-        case SystemState::IDLE: return "IDLE";
-        case SystemState::READING_TAG: return "READING";
-        case SystemState::WRITING_TAG: return "WRITING";
-        case SystemState::VERIFYING_TAG: return "VERIFYING";
-        case SystemState::ERROR: return "ERROR";
-        case SystemState::LOW_BATTERY: return "LOW BATT";
-        case SystemState::SLEEP: return "SLEEP";
-        default: return "UNKNOWN";
+        case SystemState::BOOT:               return "BOOT";
+        case SystemState::IDLE:               return "IDLE";
+        case SystemState::READING_TAG:        return "READING";
+        case SystemState::WRITING_TAG:        return "WRITING";
+        case SystemState::VERIFYING_TAG:      return "VERIFYING";
+        case SystemState::SCANNING_INVENTORY: return "SCANNING";
+        case SystemState::EDITING_SPOOL:      return "EDITING";
+        case SystemState::CUSTOM_ENTRY:       return "CUSTOM ENTRY";
+        case SystemState::UPDATING_DATABASE:  return "UPDATING DB";
+        case SystemState::ERROR:              return "ERROR";
+        case SystemState::LOW_BATTERY:        return "LOW BATT";
+        case SystemState::SLEEP:              return "SLEEP";
+        default:                              return "UNKNOWN";
     }
+}
+
+void StateMachine::enterError(const String& message, uint16_t autoDismissMs, bool retryable) {
+    _errorCtx.failed_state = currentState;
+    _errorCtx.message = message;
+    _errorCtx.auto_dismiss_ms = autoDismissMs;
+    _errorCtx.retryable = retryable;
+    transitionTo(SystemState::ERROR);
 }
 
 void StateMachine::transitionTo(SystemState newState) {
-    // Exit logic for current state
-
     currentState = newState;
-    Serial.printf("State Transition: -> %s\n", getStateName());
-
-    // Entry logic for new state
-    switch (newState) {
-        case SystemState::ERROR:
-            // Trigger Error Sound/LED
-            break;
-        case SystemState::LOW_BATTERY:
-            // Disable high power peripherals
-            break;
-        default:
-            break;
-    }
+    Serial.printf("State: -> %s\n", getStateName());
 }
 
+// FSD Section 12.3: Key Transitions
 void StateMachine::handleEvent(SystemEvent event) {
     switch (currentState) {
         case SystemState::BOOT:
-            if (event == SystemEvent::INIT_DONE) transitionTo(SystemState::IDLE);
+            if (event == SystemEvent::INIT_DONE)
+                transitionTo(SystemState::IDLE);
             break;
 
         case SystemState::IDLE:
-            if (event == SystemEvent::TAG_DETECTED) transitionTo(SystemState::READING_TAG);
-            if (event == SystemEvent::BATTERY_CRITICAL) transitionTo(SystemState::LOW_BATTERY);
+            switch (event) {
+                case SystemEvent::SCAN_REQUEST:
+                    transitionTo(SystemState::SCANNING_INVENTORY);
+                    break;
+                case SystemEvent::READ_REQUEST:
+                    transitionTo(SystemState::READING_TAG);
+                    break;
+                case SystemEvent::WRITE_REQUEST:
+                    transitionTo(SystemState::WRITING_TAG);
+                    break;
+                case SystemEvent::EDIT_REQUEST:
+                    transitionTo(SystemState::EDITING_SPOOL);
+                    break;
+                case SystemEvent::CUSTOM_REQUEST:
+                    transitionTo(SystemState::CUSTOM_ENTRY);
+                    break;
+                case SystemEvent::DB_UPDATE_REQUEST:
+                    transitionTo(SystemState::UPDATING_DATABASE);
+                    break;
+                case SystemEvent::BATTERY_CRITICAL:
+                    transitionTo(SystemState::LOW_BATTERY);
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case SystemState::SCANNING_INVENTORY:
+            if (event == SystemEvent::TAG_DETECTED)
+                transitionTo(SystemState::READING_TAG);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("No tag detected", 5000, true);
             break;
 
         case SystemState::READING_TAG:
-            if (event == SystemEvent::OPERATION_SUCCESS) transitionTo(SystemState::IDLE); // Or Show Data
-            if (event == SystemEvent::OPERATION_FAILED) transitionTo(SystemState::ERROR);
+            if (event == SystemEvent::OPERATION_SUCCESS)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("Tag read failed", 5000, true);
+            break;
+
+        case SystemState::WRITING_TAG:
+            if (event == SystemEvent::OPERATION_SUCCESS)
+                transitionTo(SystemState::VERIFYING_TAG);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("Tag write failed", 10000, true);
+            break;
+
+        case SystemState::VERIFYING_TAG:
+            if (event == SystemEvent::OPERATION_SUCCESS)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("Tag verification failed", 10000, true);
+            break;
+
+        case SystemState::EDITING_SPOOL:
+            if (event == SystemEvent::SAVE_REQUEST)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("Failed to save spool data", 0, false);
+            break;
+
+        case SystemState::CUSTOM_ENTRY:
+            if (event == SystemEvent::SAVE_REQUEST)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("Failed to save custom spool", 0, false);
+            break;
+
+        case SystemState::UPDATING_DATABASE:
+            if (event == SystemEvent::DB_UPDATE_SUCCESS)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::DB_UPDATE_FAILED)
+                enterError("Database update failed", 15000, true);
             break;
 
         case SystemState::ERROR:
-            if (event == SystemEvent::TIMEOUT) transitionTo(SystemState::IDLE);
+            if (event == SystemEvent::USER_DISMISS || event == SystemEvent::TIMEOUT)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::USER_RETRY) {
+                // Return to the failed state for retry
+                transitionTo(_errorCtx.failed_state);
+            }
             break;
 
-        // ... Implement other transitions
+        case SystemState::LOW_BATTERY:
+            if (event == SystemEvent::WAKE_UP)
+                transitionTo(SystemState::IDLE);
+            break;
+
         default:
             break;
     }
