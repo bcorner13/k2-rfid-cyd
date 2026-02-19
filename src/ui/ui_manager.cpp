@@ -4,6 +4,7 @@
 #include <config_manager.h>
 #include <network_manager.h>
 #include <rfid_driver.h>
+#include <system_state.h>
 
 // Include screen headers from the new include path
 #include <ui/screens/screen_main.h>
@@ -68,39 +69,107 @@ void UIManager::update() {
     lv_timer_handler();
 }
 
+// ---------------------------------------------------------------------------
+// P1.9: Operation lock helpers (FSD Section 12.5)
+// ---------------------------------------------------------------------------
+bool UIManager::isSystemBusy() {
+    return sysState.isBusy();
+}
+
+void UIManager::updateButtonStates() {
+    bool busy = isSystemBusy();
+
+    // Helper lambdas for enable/disable
+    auto setEnabled = [](lv_obj_t* obj, bool enabled) {
+        if (!obj) return;
+        if (enabled)
+            lv_obj_clear_state(obj, LV_STATE_DISABLED);
+        else
+            lv_obj_add_state(obj, LV_STATE_DISABLED);
+    };
+
+    // Main screen: operation buttons disabled when busy
+    setEnabled(screenMain.btnReadRfid, !busy);
+    setEnabled(screenMain.btnWrite, !busy);
+    setEnabled(screenMain.btnLibrary, !busy);
+    setEnabled(screenMain.colorBlock, !busy);
+    setEnabled(screenMain.sliderWeight, !busy);
+    // Settings button always active (navigation only)
+
+    // Settings screen: operation buttons disabled when busy
+    setEnabled(screenSettings.btnUpdateDB, !busy);
+    setEnabled(screenSettings.btnResetWifi, !busy);
+    setEnabled(screenSettings.btnRestart, !busy);
+    // Back, About, Beep toggle always active
+}
+
+// ---------------------------------------------------------------------------
+// Event handler with P1.9 busy guard
+// ---------------------------------------------------------------------------
 void UIManager::event_handler(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* obj = (lv_obj_t*) lv_event_get_target(e);
 
     if (code == LV_EVENT_CLICKED) {
-        if (obj == ui.screenMain.btnSettings) ui.showSettingsScreen();
-        else if (obj == ui.screenMain.btnLibrary) ui.showFilamentLibrary();
-        else if (obj == ui.screenLibrary.btnBack) ui.showMainScreen();
-        else if (obj == ui.screenSettings.btnBack) ui.showMainScreen();
-        else if (obj == ui.screenSettings.btnAbout) ui.showAboutScreen();
-        else if (obj == ui.screenAbout.btnBack) ui.showSettingsScreen();
+        // Navigation (always allowed regardless of state)
+        if (obj == ui.screenMain.btnSettings) { ui.showSettingsScreen(); return; }
+        if (obj == ui.screenLibrary.btnBack) { ui.showMainScreen(); return; }
+        if (obj == ui.screenSettings.btnBack) { ui.showMainScreen(); return; }
+        if (obj == ui.screenSettings.btnAbout) { ui.showAboutScreen(); return; }
+        if (obj == ui.screenAbout.btnBack) { ui.showSettingsScreen(); return; }
 
-        else if (obj == ui.screenMain.btnReadRfid) {
+        // P1.9: Gate all operation-triggering actions when system is busy
+        if (isSystemBusy()) {
+            Serial.printf("UI: action rejected — system busy (%s)\n", sysState.getStateName());
+            return;
+        }
+
+        if (obj == ui.screenMain.btnReadRfid) {
+            sysState.handleEvent(SystemEvent::READ_REQUEST);
+            ui.screenMain.setWriteStatus("Reading...");
+            ui.updateButtonStates();
+
             SpoolData readSpool;
             if (rfid.readCFSTag(readSpool)) {
                 ui.updateDashboardFromSpool(readSpool);
                 ui.screenMain.setWriteStatus("Read OK", true, false);
+                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
             } else {
                 ui.screenMain.setWriteStatus("No tag / Read failed", false, false);
+                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
             }
+            ui.updateButtonStates();
         }
         else if (obj == ui.screenMain.btnWrite) {
+            sysState.handleEvent(SystemEvent::WRITE_REQUEST);
+            ui.screenMain.setWriteStatus("Writing...");
+            ui.updateButtonStates();
+
             if (rfid.writeCFSTag(ui.currentSpool)) {
                 ui.screenMain.setWriteStatus("Write OK", true, false);
+                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
             } else {
                 ui.screenMain.setWriteStatus("Write failed", false, false);
+                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
             }
+            ui.updateButtonStates();
+        }
+        else if (obj == ui.screenMain.btnLibrary) {
+            ui.showFilamentLibrary();
         }
         else if (obj == ui.screenMain.colorBlock) {
-            ui.showColorPicker();  // tap color block to pick color
+            ui.showColorPicker();
         }
         else if (obj == ui.screenSettings.btnUpdateDB) {
-            network.updateFilamentDB();
+            sysState.handleEvent(SystemEvent::DB_UPDATE_REQUEST);
+            ui.updateButtonStates();
+
+            if (network.updateFilamentDB()) {
+                sysState.handleEvent(SystemEvent::DB_UPDATE_SUCCESS);
+            } else {
+                sysState.handleEvent(SystemEvent::DB_UPDATE_FAILED);
+            }
+            ui.updateButtonStates();
         }
         else if (obj == ui.screenSettings.btnResetWifi) {
             network.startConfigPortal();
@@ -108,7 +177,6 @@ void UIManager::event_handler(lv_event_t* e) {
         else if (obj == ui.screenSettings.btnRestart) {
             ESP.restart();
         }
-
         else {
             /* Filament grid: tap may hit cell, inner, swatch, or label – find the grid cell */
             lv_obj_t* cell = obj;
@@ -128,6 +196,7 @@ void UIManager::event_handler(lv_event_t* e) {
     }
     else if (code == LV_EVENT_VALUE_CHANGED) {
         if (obj == ui.screenMain.sliderWeight) {
+            if (isSystemBusy()) return;  // P1.9: guard slider too
             int weight = lv_slider_get_value(obj);
             ui.currentSpool.setWeight(weight);
             lv_label_set_text_fmt(ui.screenMain.labelWeight, "%dg", weight);
@@ -143,10 +212,12 @@ void UIManager::showMainScreen() {
     updateDashboardFromSpool(currentSpool);
     screenMain.setWriteStatus("Ready");
     screenMain.show();
+    updateButtonStates();  // P1.9: sync button states on screen transition
 }
 
 void UIManager::showSettingsScreen() {
     screenSettings.show();
+    updateButtonStates();  // P1.9
 }
 
 void UIManager::showAboutScreen() {

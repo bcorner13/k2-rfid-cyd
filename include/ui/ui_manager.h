@@ -15,6 +15,7 @@
 #include "screens/screen_settings.h"
 #include "screens/screen_about.h"
 #include "spool_data.h"
+#include "system_state.h"
 
 class UIManager {
 public:
@@ -34,10 +35,16 @@ public:
     void showMainScreen();
     void showSettingsScreen();
     void showFilamentLibrary();
-    void showAboutScreen(); // This was missing
+    void showAboutScreen();
+
+    // P1.9: Operation lock & UI guards (FSD Section 12.5)
+    void updateButtonStates();  // Enable/disable buttons based on sysState
 
 private:
     void updateDashboardFromSpool(const SpoolData& data);
+
+    // P1.9: Guard check — returns true if system is busy (not IDLE)
+    static bool isSystemBusy();
 
     // Top Layer
     lv_obj_t* layerTop{nullptr};
