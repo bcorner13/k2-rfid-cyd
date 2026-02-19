@@ -5,12 +5,14 @@
 #include <network_manager.h>
 #include <rfid_driver.h>
 #include <system_state.h>
+#include <inventory_manager.h>
 
 // Include screen headers from the new include path
 #include <ui/screens/screen_main.h>
 #include <ui/screens/screen_library.h>
 #include <ui/screens/screen_settings.h>
 #include <ui/screens/screen_about.h>
+#include <ui/screens/screen_inventory.h>
 
 UIManager ui;
 
@@ -35,6 +37,7 @@ void UIManager::init() {
     screenLibrary.init();
     screenSettings.init();
     screenAbout.init();
+    screenInventory.init();
 
     // Register event handlers once (not on every screen transition)
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
@@ -54,6 +57,10 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenAbout.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
 
     lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenInventory.btnAddCustom, event_handler, LV_EVENT_CLICKED, NULL);
 
     createColorPicker();
     createOverlay();
@@ -101,6 +108,10 @@ void UIManager::updateButtonStates() {
     setEnabled(screenSettings.btnResetWifi, !busy);
     setEnabled(screenSettings.btnRestart, !busy);
     // Back, About, Beep toggle always active
+
+    // Inventory screen: Scan/Add disabled when busy, Back always active
+    setEnabled(screenInventory.btnScanTag, !busy);
+    setEnabled(screenInventory.btnAddCustom, !busy);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +128,7 @@ void UIManager::event_handler(lv_event_t* e) {
         if (obj == ui.screenSettings.btnBack) { ui.showMainScreen(); return; }
         if (obj == ui.screenSettings.btnAbout) { ui.showAboutScreen(); return; }
         if (obj == ui.screenAbout.btnBack) { ui.showSettingsScreen(); return; }
+        if (obj == ui.screenInventory.btnBack) { ui.showMainScreen(); return; }
 
         // P1.9: Gate all operation-triggering actions when system is busy
         if (isSystemBusy()) {
@@ -157,6 +169,35 @@ void UIManager::event_handler(lv_event_t* e) {
         else if (obj == ui.screenMain.btnLibrary) {
             ui.showFilamentLibrary();
         }
+        else if (obj == ui.screenInventory.btnScanTag) {
+            sysState.handleEvent(SystemEvent::SCAN_REQUEST);
+            ui.updateButtonStates();
+
+            TagData tag;
+            if (rfid.readTag(tag)) {
+                String uid = tag.formatUID();
+                const SpoolRecord* existing = inventory.getSpoolByUID(uid);
+                if (existing) {
+                    // Known spool — reconcile weight
+                    auto reconcile = RFIDDriver::reconcileWeight(
+                        tag.remaining_weight_g, existing->current_weight_g);
+                    if (!reconcile.in_sync) {
+                        Serial.printf("Weight mismatch: tag=%ug inv=%ug\n",
+                                      reconcile.tag_weight_g, reconcile.inventory_weight_g);
+                    }
+                    // TODO: P1.4 — navigate to spool detail
+                }
+                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+            } else {
+                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+            }
+            ui.updateButtonStates();
+            ui.screenInventory.populate();
+        }
+        else if (obj == ui.screenInventory.btnAddCustom) {
+            // TODO: P1.5 — navigate to custom entry screen
+            Serial.println("Add Custom tapped (P1.5 not yet implemented)");
+        }
         else if (obj == ui.screenMain.colorBlock) {
             ui.showColorPicker();
         }
@@ -178,6 +219,21 @@ void UIManager::event_handler(lv_event_t* e) {
             ESP.restart();
         }
         else {
+            // Check if tap is on an inventory list row
+            lv_obj_t* invRow = obj;
+            while (invRow && lv_obj_get_parent(invRow) != ui.screenInventory.list) {
+                invRow = lv_obj_get_parent(invRow);
+            }
+            if (invRow && lv_obj_get_parent(invRow) == ui.screenInventory.list) {
+                size_t idx = (size_t)lv_obj_get_user_data(invRow);
+                auto active = inventory.getAllActive();
+                if (idx < active.size()) {
+                    Serial.printf("Inventory row tapped: %s\n", active[idx]->spool_id.c_str());
+                    // TODO: P1.4 — navigate to spool detail screen
+                }
+                return;
+            }
+
             /* Filament grid: tap may hit cell, inner, swatch, or label – find the grid cell */
             lv_obj_t* cell = obj;
             while (cell && lv_obj_get_parent(cell) != ui.screenLibrary.grid) {
@@ -222,6 +278,18 @@ void UIManager::showSettingsScreen() {
 
 void UIManager::showAboutScreen() {
     screenAbout.show();
+}
+
+void UIManager::showInventoryScreen() {
+    screenInventory.show();
+    updateButtonStates();
+
+    // Register tap handlers for inventory list rows (dynamic, like library grid)
+    uint32_t count = lv_obj_get_child_cnt(screenInventory.list);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_obj_t* row = lv_obj_get_child(screenInventory.list, i);
+        lv_obj_add_event_cb(row, event_handler, LV_EVENT_CLICKED, NULL);
+    }
 }
 
 void UIManager::showFilamentLibrary() {
