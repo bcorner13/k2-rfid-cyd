@@ -7,7 +7,14 @@ struct AppConfig {
     bool write_empty_only = true;
     bool clone_serial = false;
     uint8_t brightness = 255;
-    String printer_ip = "192.168.1.100"; // Default
+    String printer_ip = "192.168.1.100";
+
+    // P1.10: Database update metadata (FSD Section 5.6)
+    String db_hash;                 // SHA-256 hex of last downloaded DB
+    uint32_t db_updated_at = 0;     // Uptime seconds when last updated
+    uint16_t db_profile_count = 0;  // Number of profiles in last DB
+    uint8_t db_schema_version = 0;  // 1 = known format, 0 = unknown/never updated
+    String printer_model;           // From /info response (e.g. "F008")
 };
 
 class ConfigManager {
