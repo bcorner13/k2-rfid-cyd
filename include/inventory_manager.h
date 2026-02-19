@@ -71,14 +71,33 @@ public:
     /** Add a spool from a FilamentProfile. Returns spool_id or empty on failure. */
     String addSpool(const FilamentProfile& profile, SpoolSource source, uint32_t weight_g = 1000);
 
+    /** P1.8: Archive spool (soft delete, reversible). Retains tag_uid. */
     bool archiveSpool(const String& spool_id);
+
+    /** P1.8: Delete spool permanently (irreversible). Clears tag_uid. */
     bool deleteSpool(const String& spool_id);
+
     bool updateWeight(const String& spool_id, uint32_t new_weight_g);
 
     /** P0.6: Link a tag UID to an existing spool (for tag ↔ inventory binding). */
     bool linkTagUID(const String& spool_id, const String& tag_uid);
 
+    /** P1.7: Unlink tag from spool (clears tag_uid, making it local-only). */
+    bool unlinkTag(const String& spool_id);
+
+    /** P1.7: Reactivate an archived spool (sets status back to ACTIVE). */
+    bool reactivateSpool(const String& spool_id);
+
+    /** P1.7: Check if a UID is assigned to any active spool.
+     *  Returns spool_id of the conflicting spool, or empty string if no collision. */
+    String checkUIDCollision(const String& tag_uid) const;
+
+    /** P1.7: Lookup by UID — searches active spools first, then archived (FSD 6.7). */
     const SpoolRecord* getSpoolByUID(const String& tag_uid) const;
+
+    /** P1.7: Lookup by UID among archived spools only. */
+    const SpoolRecord* getArchivedSpoolByUID(const String& tag_uid) const;
+
     const SpoolRecord* getSpoolById(const String& spool_id) const;
     std::vector<const SpoolRecord*> getAllActive() const;
     size_t getSpoolCount() const { return _spools.size(); }

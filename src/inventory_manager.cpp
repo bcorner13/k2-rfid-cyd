@@ -201,19 +201,25 @@ String InventoryManager::addSpool(const FilamentProfile& profile, SpoolSource so
     return spool_id;
 }
 
+// P1.8: Archive — soft delete, retains tag_uid for reactivation
 bool InventoryManager::archiveSpool(const String& spool_id) {
     int idx = findIndex(spool_id);
     if (idx < 0) return false;
 
     _spools[idx].status = SpoolStatus::ARCHIVED;
     _spools[idx].updated_at = millis() / 1000;
+    // tag_uid intentionally retained (FSD 6.9)
+    Serial.printf("Archived spool %s (tag_uid retained: %s)\n",
+                  spool_id.c_str(), _spools[idx].tag_uid.c_str());
     return save();
 }
 
+// P1.8: Delete — hard delete, clears tag_uid so tag becomes unrecognized
 bool InventoryManager::deleteSpool(const String& spool_id) {
     int idx = findIndex(spool_id);
     if (idx < 0) return false;
 
+    Serial.printf("Deleting spool %s (tag_uid cleared)\n", spool_id.c_str());
     _spools.erase(_spools.begin() + idx);
     return save();
 }
@@ -226,6 +232,47 @@ bool InventoryManager::linkTagUID(const String& spool_id, const String& tag_uid)
     _spools[idx].updated_at = millis() / 1000;
     Serial.printf("Linked tag %s to spool %s\n", tag_uid.c_str(), spool_id.c_str());
     return save();
+}
+
+// P1.7: Unlink tag from spool (FSD 6.7 "Unlink Tag" action)
+bool InventoryManager::unlinkTag(const String& spool_id) {
+    int idx = findIndex(spool_id);
+    if (idx < 0) return false;
+
+    Serial.printf("Unlinked tag %s from spool %s\n",
+                  _spools[idx].tag_uid.c_str(), spool_id.c_str());
+    _spools[idx].tag_uid = "";
+    _spools[idx].updated_at = millis() / 1000;
+    return save();
+}
+
+// P1.7: Reactivate an archived spool (FSD 6.7 "Archived spool rescanned")
+bool InventoryManager::reactivateSpool(const String& spool_id) {
+    int idx = findIndex(spool_id);
+    if (idx < 0) return false;
+
+    if (_spools[idx].status != SpoolStatus::ARCHIVED) {
+        Serial.printf("Spool %s is not archived (status=%u)\n",
+                      spool_id.c_str(), static_cast<uint8_t>(_spools[idx].status));
+        return false;
+    }
+
+    _spools[idx].status = SpoolStatus::ACTIVE;
+    _spools[idx].updated_at = millis() / 1000;
+    Serial.printf("Reactivated spool %s\n", spool_id.c_str());
+    return save();
+}
+
+// P1.7: Check if UID is assigned to any active (non-archived) spool
+String InventoryManager::checkUIDCollision(const String& tag_uid) const {
+    if (tag_uid.isEmpty()) return "";
+
+    for (const auto& rec : _spools) {
+        if (rec.tag_uid == tag_uid && rec.status != SpoolStatus::ARCHIVED) {
+            return rec.spool_id;
+        }
+    }
+    return "";
 }
 
 bool InventoryManager::updateWeight(const String& spool_id, uint32_t new_weight_g) {
@@ -244,10 +291,34 @@ bool InventoryManager::updateWeight(const String& spool_id, uint32_t new_weight_
     return save();
 }
 
+// P1.7: Search active spools first, then archived (FSD 6.7 lookup order)
 const SpoolRecord* InventoryManager::getSpoolByUID(const String& tag_uid) const {
     if (tag_uid.isEmpty()) return nullptr;
+
+    // 1. Search active spools (ACTIVE or EMPTY)
     for (const auto& rec : _spools) {
-        if (rec.tag_uid == tag_uid) return &rec;
+        if (rec.tag_uid == tag_uid && rec.status != SpoolStatus::ARCHIVED) {
+            return &rec;
+        }
+    }
+
+    // 2. Search archived spools
+    for (const auto& rec : _spools) {
+        if (rec.tag_uid == tag_uid && rec.status == SpoolStatus::ARCHIVED) {
+            return &rec;
+        }
+    }
+
+    return nullptr;
+}
+
+const SpoolRecord* InventoryManager::getArchivedSpoolByUID(const String& tag_uid) const {
+    if (tag_uid.isEmpty()) return nullptr;
+
+    for (const auto& rec : _spools) {
+        if (rec.tag_uid == tag_uid && rec.status == SpoolStatus::ARCHIVED) {
+            return &rec;
+        }
     }
     return nullptr;
 }
