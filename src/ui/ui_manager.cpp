@@ -13,6 +13,7 @@
 #include <ui/screens/screen_settings.h>
 #include <ui/screens/screen_about.h>
 #include <ui/screens/screen_inventory.h>
+#include <ui/screens/screen_spool_detail.h>
 
 UIManager ui;
 
@@ -38,6 +39,7 @@ void UIManager::init() {
     screenSettings.init();
     screenAbout.init();
     screenInventory.init();
+    screenSpoolDetail.init();
 
     // Register event handlers once (not on every screen transition)
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
@@ -61,6 +63,15 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnAddCustom, event_handler, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnWriteTag, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnUnlinkTag, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnArchive, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnDelete, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnWeightOk, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSpoolDetail.btnWeightCancel, event_handler, LV_EVENT_CLICKED, NULL);
 
     createColorPicker();
     createOverlay();
@@ -112,6 +123,13 @@ void UIManager::updateButtonStates() {
     // Inventory screen: Scan/Add disabled when busy, Back always active
     setEnabled(screenInventory.btnScanTag, !busy);
     setEnabled(screenInventory.btnAddCustom, !busy);
+
+    // Spool detail: action buttons disabled when busy, Back always active
+    setEnabled(screenSpoolDetail.btnUpdateWeight, !busy);
+    setEnabled(screenSpoolDetail.btnWriteTag, !busy);
+    setEnabled(screenSpoolDetail.btnUnlinkTag, !busy);
+    setEnabled(screenSpoolDetail.btnArchive, !busy);
+    setEnabled(screenSpoolDetail.btnDelete, !busy);
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +147,7 @@ void UIManager::event_handler(lv_event_t* e) {
         if (obj == ui.screenSettings.btnAbout) { ui.showAboutScreen(); return; }
         if (obj == ui.screenAbout.btnBack) { ui.showSettingsScreen(); return; }
         if (obj == ui.screenInventory.btnBack) { ui.showMainScreen(); return; }
+        if (obj == ui.screenSpoolDetail.btnBack) { ui.showInventoryScreen(); return; }
 
         // P1.9: Gate all operation-triggering actions when system is busy
         if (isSystemBusy()) {
@@ -184,8 +203,13 @@ void UIManager::event_handler(lv_event_t* e) {
                     if (!reconcile.in_sync) {
                         Serial.printf("Weight mismatch: tag=%ug inv=%ug\n",
                                       reconcile.tag_weight_g, reconcile.inventory_weight_g);
+                        // Update inventory with tag weight (tag is source of truth)
+                        inventory.updateWeight(existing->spool_id, reconcile.tag_weight_g);
                     }
-                    // TODO: P1.4 — navigate to spool detail
+                    sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                    ui.updateButtonStates();
+                    ui.showSpoolDetail(existing->spool_id);
+                    return;
                 }
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
             } else {
@@ -197,6 +221,64 @@ void UIManager::event_handler(lv_event_t* e) {
         else if (obj == ui.screenInventory.btnAddCustom) {
             // TODO: P1.5 — navigate to custom entry screen
             Serial.println("Add Custom tapped (P1.5 not yet implemented)");
+        }
+        else if (obj == ui.screenSpoolDetail.btnWeightCancel) {
+            // Close modal (no busy guard needed)
+            lv_obj_add_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
+        }
+        else if (obj == ui.screenSpoolDetail.btnUpdateWeight) {
+            // Show weight input modal
+            lv_obj_clear_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
+        }
+        else if (obj == ui.screenSpoolDetail.btnWeightOk) {
+            // Save weight from spinbox
+            int32_t newWeight = lv_spinbox_get_value(ui.screenSpoolDetail.spinboxWeight);
+            inventory.updateWeight(ui.screenSpoolDetail.currentSpoolId, (uint32_t)newWeight);
+            lv_obj_add_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
+            // Refresh the detail screen
+            ui.screenSpoolDetail.loadSpool(ui.screenSpoolDetail.currentSpoolId);
+            Serial.printf("Weight updated: %s → %dg\n",
+                          ui.screenSpoolDetail.currentSpoolId.c_str(), (int)newWeight);
+        }
+        else if (obj == ui.screenSpoolDetail.btnWriteTag) {
+            const SpoolRecord* rec = inventory.getSpoolById(ui.screenSpoolDetail.currentSpoolId);
+            if (!rec) return;
+
+            sysState.handleEvent(SystemEvent::WRITE_REQUEST);
+            ui.updateButtonStates();
+
+            // Build SpoolData from SpoolRecord for CFS tag write
+            SpoolData writeData;
+            writeData.setType(rec->material_type.c_str());
+            writeData.setColor(strtoul(rec->color_hex.c_str(), nullptr, 16));
+            writeData.setWeight(rec->current_weight_g);
+
+            if (rfid.writeCFSTag(writeData)) {
+                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                Serial.printf("Tag written for spool %s\n", rec->spool_id.c_str());
+            } else {
+                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+                Serial.println("Tag write failed");
+            }
+            ui.updateButtonStates();
+        }
+        else if (obj == ui.screenSpoolDetail.btnUnlinkTag) {
+            inventory.unlinkTag(ui.screenSpoolDetail.currentSpoolId);
+            ui.screenSpoolDetail.loadSpool(ui.screenSpoolDetail.currentSpoolId);
+            Serial.printf("Tag unlinked from spool %s\n",
+                          ui.screenSpoolDetail.currentSpoolId.c_str());
+        }
+        else if (obj == ui.screenSpoolDetail.btnArchive) {
+            String id = ui.screenSpoolDetail.currentSpoolId;
+            inventory.archiveSpool(id);
+            Serial.printf("Spool archived: %s\n", id.c_str());
+            ui.showInventoryScreen();
+        }
+        else if (obj == ui.screenSpoolDetail.btnDelete) {
+            String id = ui.screenSpoolDetail.currentSpoolId;
+            inventory.deleteSpool(id);
+            Serial.printf("Spool deleted: %s\n", id.c_str());
+            ui.showInventoryScreen();
         }
         else if (obj == ui.screenMain.colorBlock) {
             ui.showColorPicker();
@@ -228,8 +310,7 @@ void UIManager::event_handler(lv_event_t* e) {
                 size_t idx = (size_t)lv_obj_get_user_data(invRow);
                 auto active = inventory.getAllActive();
                 if (idx < active.size()) {
-                    Serial.printf("Inventory row tapped: %s\n", active[idx]->spool_id.c_str());
-                    // TODO: P1.4 — navigate to spool detail screen
+                    ui.showSpoolDetail(active[idx]->spool_id);
                 }
                 return;
             }
@@ -280,11 +361,18 @@ void UIManager::showAboutScreen() {
     screenAbout.show();
 }
 
+void UIManager::showSpoolDetail(const String& spool_id) {
+    screenSpoolDetail.loadSpool(spool_id);
+    screenSpoolDetail.show();
+    updateButtonStates();
+}
+
 void UIManager::showInventoryScreen() {
+    screenInventory.populate();
     screenInventory.show();
     updateButtonStates();
 
-    // Register tap handlers for inventory list rows (dynamic, like library grid)
+    // Register tap handlers for inventory list rows (dynamic, recreated by populate)
     uint32_t count = lv_obj_get_child_cnt(screenInventory.list);
     for (uint32_t i = 0; i < count; i++) {
         lv_obj_t* row = lv_obj_get_child(screenInventory.list, i);

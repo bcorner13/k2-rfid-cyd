@@ -15,6 +15,7 @@
 #include "screens/screen_settings.h"
 #include "screens/screen_about.h"
 #include "screens/screen_inventory.h"
+#include "screens/screen_spool_detail.h"
 #include "spool_data.h"
 #include "system_state.h"
 
@@ -29,6 +30,7 @@ public:
     ScreenSettings screenSettings;
     ScreenAbout screenAbout;
     ScreenInventory screenInventory;
+    ScreenSpoolDetail screenSpoolDetail;
 
     SpoolData currentSpool;
 
@@ -39,6 +41,7 @@ public:
     void showFilamentLibrary();
     void showAboutScreen();
     void showInventoryScreen();
+    void showSpoolDetail(const String& spool_id);
 
     // P1.9: Operation lock & UI guards (FSD Section 12.5)
     void updateButtonStates();  // Enable/disable buttons based on sysState
