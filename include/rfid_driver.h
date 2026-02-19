@@ -12,6 +12,7 @@
 #include "mbedtls/aes.h"
 #include "spool_data.h"
 #include "k2_tag.h"
+#include "tag_data.h"
 
 // Mirror voting result for sectors 6-8
 struct MirrorResult {
@@ -47,9 +48,13 @@ public:
     bool checkTagPresent();
     void haltTag();
 
-    // K2 / CFS Operations
+    // K2 / CFS Operations (legacy SpoolData API)
     bool readCFSTag(SpoolData& spoolData);
     bool writeCFSTag(const SpoolData& spoolData);
+
+    // P1.1: TagData-based read/write (FSD Section 7.9)
+    bool readTag(TagData& out);
+    bool writeTag(const TagData& in);
 
     // CRC-32 (IEEE 802.3 / zlib-compatible)
     static uint32_t computeCRC32(const uint8_t* data, size_t length);
