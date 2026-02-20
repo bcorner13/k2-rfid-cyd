@@ -2074,17 +2074,17 @@ These deliver the primary user-facing features. Implement after P0 is solid.
 
 | # | Feature | FSD Section | Depends On |
 |---|---------|-------------|------------|
-| P1.1 | **TagData struct & data model separation** | 3.2, 7.9 | P0.2, P0.3 |
-| P1.2 | **Inventory manager** (CRUD, persistence) | 6.1–6.6 | P0.1, P1.1 |
-| P1.3 | **Inventory screen** (list/grid, scan, filter) | 11.4 | P1.2 |
-| P1.4 | **Spool detail screen** (view/edit weight, history) | 11.5 | P1.2 |
-| P1.5 | **Custom spool entry** (multi-step form) | 11.6 | P1.2 |
-| P1.6 | **Extended tag write** (v2 sectors 10-13) | 7.5 | P0.7, P1.1 |
-| P1.7 | **UID collision handling** | 6.8 | P1.2 |
-| P1.8 | **Archive vs delete** | 6.9 | P1.2 |
-| P1.9 | **Operation lock & UI guards** | 12.5 | P0.5 |
-| P1.10 | **Database update flow** (SHA-256 hash, schema validation) | 5.6 | P0.4 |
-| P1.11 | **Feedback module** (buzzer + LEDs) | 9 | CH422G driver |
+| P1.1 | ~~**TagData struct & data model separation**~~ | 3.2, 7.9 | P0.2, P0.3 | **Done** — `tag_data.h/cpp`: TagData struct with v1/v2 fields, `readTag()`/`writeTag()` in RFID driver, `tagDataFromSpool()`/`spoolFromTagData()` conversions. |
+| P1.2 | ~~**Inventory manager**~~ (CRUD, persistence) | 6.1–6.6 | P0.1, P1.1 | **Done** — Completed as part of P0.1. |
+| P1.3 | ~~**Inventory screen**~~ (list/grid, scan, filter) | 11.4 | P1.2 | **Done** — `screen_inventory.h/cpp`: scrollable spool list with color swatch, material badge, weight bar, status dot. Scan Tag triggers RFID read + UID lookup + weight reconciliation. |
+| P1.4 | ~~**Spool detail screen**~~ (view/edit weight, history) | 11.5 | P1.2 | **Done** — `screen_spool_detail.h/cpp`: two-column layout, weight gauge, history, action buttons (Update Weight, Write Tag, Unlink, Archive, Delete), weight spinbox modal. |
+| P1.5 | ~~**Custom spool entry**~~ (multi-step form) | 11.6 | P1.2 | **Done** — `screen_custom_entry.h/cpp`: 5-step wizard (identity, appearance, temps/weight, speed/fan, review). `addSpoolRecord()` overload for full SpoolRecord. Save Locally or Save + Write Tag. |
+| P1.6 | ~~**Extended tag write**~~ (v2 sectors 10-13) | 7.5 | P0.7, P1.1 | **Done** — Implemented in P1.1 `writeTag(TagData)`. |
+| P1.7 | ~~**UID collision handling**~~ | 6.8 | P1.2 | **Done** — `checkUIDCollision()`, active-first UID lookup, `unlinkTag()`, `reactivateSpool()`, `getArchivedSpoolByUID()`. |
+| P1.8 | ~~**Archive vs delete**~~ | 6.9 | P1.2 | **Done** — `archiveSpool()` retains tag_uid for reactivation; `deleteSpool()` hard-erases from vector. |
+| P1.9 | ~~**Operation lock & UI guards**~~ | 12.5 | P0.5 | **Done** — `isSystemBusy()` gate in event handler, `updateButtonStates()` disables action buttons via `LV_STATE_DISABLED` across all screens. |
+| P1.10 | ~~**Database update flow**~~ (SHA-256 hash, schema validation) | 5.6 | P0.4 | **Done** — `updateFilamentDBWithValidation()`: PSRAM download buffer, mbedtls SHA-256 hash comparison, JSON schema spot-check, atomic file replace, config metadata. |
+| P1.11 | ~~**Feedback module**~~ (buzzer + LEDs) | 9 | CH422G driver | **Done** — `feedback.h/cpp`: non-blocking timer-driven patterns (7 event types), configurable GPIO pins, buzzer gated by `config.beep_enabled`, LEDs always active. Wired into all RFID/inventory/DB events. |
 
 ### 15.3 P2 — Refinement
 
@@ -2138,9 +2138,11 @@ Polish and resilience. Implement as time allows; system is functional without th
 
 ## 18. Status
 
-**Document Status:** Draft (v2.4)
+**Document Status:** Draft (v2.5)
 
 This FSD reflects the planned architecture for the filament inventory management system, extending the original RFID read/write tool with spool cataloging, usage tracking, custom spool creation, dual-storage architecture (LittleFS + SD card), and manual filament database updates from Creality printers via HTTP.
+
+v2.5 marks the entire P1 tier as complete (P1.1–P1.11). P1.1: TagData struct with v1/v2 fields, readTag/writeTag, conversion functions. P1.3: Inventory screen with spool list, scan tag, weight reconciliation. P1.4: Spool detail with two-column layout, weight modal, action buttons. P1.5: 5-step custom entry wizard with addSpoolRecord() overload. P1.7/P1.8: UID collision handling, archive vs delete semantics. P1.9: Operation lock with busy guards across all screens. P1.10: DB update with SHA-256 hash, schema validation, PSRAM buffer. P1.11: Non-blocking feedback module with 7 event patterns, configurable GPIO.
 
 v2.4 marks the entire P0 tier as complete (P0.1–P0.7). P0.2: CRC-32 using ESP32 ROM `esp_rom_crc32_le`. P0.3: mirror voting with 3-way comparison and ordered writes. P0.4: 512 KB database size guard with streaming cap and atomic replace. P0.5: full state machine with ErrorContext, retry/dismiss, per-error timeouts. P0.6: UID formatting, weight reconciliation (±5g tolerance), tag↔inventory binding. P0.7: tag version detection and K2FX origin magic check for foreign v2 tags.
 
