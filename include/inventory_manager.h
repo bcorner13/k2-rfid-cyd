@@ -71,6 +71,10 @@ public:
     /** Add a spool from a FilamentProfile. Returns spool_id or empty on failure. */
     String addSpool(const FilamentProfile& profile, SpoolSource source, uint32_t weight_g = 1000);
 
+    /** Add a spool from a fully-populated SpoolRecord (P1.5 custom entry).
+     *  Assigns spool_id and timestamps automatically. Returns spool_id or empty on failure. */
+    String addSpoolRecord(SpoolRecord rec);
+
     /** P1.8: Archive spool (soft delete, reversible). Retains tag_uid. */
     bool archiveSpool(const String& spool_id);
 

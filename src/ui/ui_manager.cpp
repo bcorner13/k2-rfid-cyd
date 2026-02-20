@@ -14,6 +14,7 @@
 #include <ui/screens/screen_about.h>
 #include <ui/screens/screen_inventory.h>
 #include <ui/screens/screen_spool_detail.h>
+#include <ui/screens/screen_custom_entry.h>
 
 UIManager ui;
 
@@ -40,6 +41,7 @@ void UIManager::init() {
     screenAbout.init();
     screenInventory.init();
     screenSpoolDetail.init();
+    screenCustomEntry.init();
 
     // Register event handlers once (not on every screen transition)
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
@@ -63,6 +65,12 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnAddCustom, event_handler, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_add_event_cb(screenCustomEntry.btnCancel, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenCustomEntry.btnPrev, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenCustomEntry.btnNext, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenCustomEntry.btnSave, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenCustomEntry.btnSaveWrite, event_handler, LV_EVENT_CLICKED, NULL);
 
     lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
@@ -148,6 +156,7 @@ void UIManager::event_handler(lv_event_t* e) {
         if (obj == ui.screenAbout.btnBack) { ui.showSettingsScreen(); return; }
         if (obj == ui.screenInventory.btnBack) { ui.showMainScreen(); return; }
         if (obj == ui.screenSpoolDetail.btnBack) { ui.showInventoryScreen(); return; }
+        if (obj == ui.screenCustomEntry.btnCancel) { ui.showInventoryScreen(); return; }
 
         // P1.9: Gate all operation-triggering actions when system is busy
         if (isSystemBusy()) {
@@ -219,8 +228,7 @@ void UIManager::event_handler(lv_event_t* e) {
             ui.screenInventory.populate();
         }
         else if (obj == ui.screenInventory.btnAddCustom) {
-            // TODO: P1.5 — navigate to custom entry screen
-            Serial.println("Add Custom tapped (P1.5 not yet implemented)");
+            ui.showCustomEntry();
         }
         else if (obj == ui.screenSpoolDetail.btnWeightCancel) {
             // Close modal (no busy guard needed)
@@ -279,6 +287,60 @@ void UIManager::event_handler(lv_event_t* e) {
             inventory.deleteSpool(id);
             Serial.printf("Spool deleted: %s\n", id.c_str());
             ui.showInventoryScreen();
+        }
+        else if (obj == ui.screenCustomEntry.btnPrev) {
+            if (ui.screenCustomEntry.currentStep > 0)
+                ui.screenCustomEntry.goToStep(ui.screenCustomEntry.currentStep - 1);
+        }
+        else if (obj == ui.screenCustomEntry.btnNext) {
+            if (ui.screenCustomEntry.currentStep < 4)
+                ui.screenCustomEntry.goToStep(ui.screenCustomEntry.currentStep + 1);
+        }
+        else if (obj == ui.screenCustomEntry.btnSave ||
+                 obj == ui.screenCustomEntry.btnSaveWrite) {
+            // Build SpoolRecord from form data
+            SpoolRecord rec;
+            rec.brand = lv_textarea_get_text(ui.screenCustomEntry.taBrand);
+            rec.name  = lv_textarea_get_text(ui.screenCustomEntry.taName);
+
+            char matBuf[8];
+            lv_dropdown_get_selected_str(ui.screenCustomEntry.ddMaterial, matBuf, sizeof(matBuf));
+            rec.material_type = matBuf;
+
+            char colorBuf[8];
+            snprintf(colorBuf, sizeof(colorBuf), "%06X", ui.screenCustomEntry.selectedColor);
+            rec.color_hex = colorBuf;
+
+            uint16_t diaIdx = lv_dropdown_get_selected(ui.screenCustomEntry.ddDiameter);
+            rec.diameter_um = (diaIdx == 0) ? 1750 : 2850;
+
+            uint32_t weight = lv_spinbox_get_value(ui.screenCustomEntry.spinWeight);
+            rec.initial_weight_g = weight;
+            rec.current_weight_g = weight;
+
+            rec.nozzle_temp_min = lv_spinbox_get_value(ui.screenCustomEntry.spinNozzleMin);
+            rec.nozzle_temp_max = lv_spinbox_get_value(ui.screenCustomEntry.spinNozzleMax);
+            rec.bed_temp_min    = lv_spinbox_get_value(ui.screenCustomEntry.spinBedMin);
+            rec.bed_temp_max    = lv_spinbox_get_value(ui.screenCustomEntry.spinBedMax);
+            rec.print_speed_min = lv_spinbox_get_value(ui.screenCustomEntry.spinSpeedMin);
+            rec.print_speed_max = lv_spinbox_get_value(ui.screenCustomEntry.spinSpeedMax);
+            rec.fan_percent     = lv_slider_get_value(ui.screenCustomEntry.sliderFan);
+            rec.source          = SpoolSource::MANUAL;
+
+            String newId = inventory.addSpoolRecord(std::move(rec));
+            if (newId.isEmpty()) {
+                Serial.println("ERROR: Failed to add custom spool (inventory full?)");
+                return;
+            }
+
+            Serial.printf("Custom spool created: %s\n", newId.c_str());
+
+            if (obj == ui.screenCustomEntry.btnSaveWrite) {
+                // Navigate to spool detail for tag writing
+                ui.showSpoolDetail(newId);
+            } else {
+                ui.showInventoryScreen();
+            }
         }
         else if (obj == ui.screenMain.colorBlock) {
             ui.showColorPicker();
@@ -365,6 +427,11 @@ void UIManager::showSpoolDetail(const String& spool_id) {
     screenSpoolDetail.loadSpool(spool_id);
     screenSpoolDetail.show();
     updateButtonStates();
+}
+
+void UIManager::showCustomEntry() {
+    screenCustomEntry.reset();
+    screenCustomEntry.show();
 }
 
 void UIManager::showInventoryScreen() {

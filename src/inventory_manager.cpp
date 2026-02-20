@@ -201,6 +201,37 @@ String InventoryManager::addSpool(const FilamentProfile& profile, SpoolSource so
     return spool_id;
 }
 
+// P1.5: Add spool from fully-populated SpoolRecord (custom entry)
+String InventoryManager::addSpoolRecord(SpoolRecord rec) {
+    if (_spools.size() >= MAX_SPOOLS) {
+        Serial.println("ERROR: Inventory full (100 spools max).");
+        return "";
+    }
+
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "SPL-%04u", _nextId++);
+    rec.spool_id = id_buf;
+
+    uint32_t now = millis() / 1000;
+    rec.created_at = now;
+    rec.updated_at = now;
+
+    rec.status = SpoolStatus::ACTIVE;
+
+    if (rec.weight_history.empty()) {
+        rec.weight_history.push_back({rec.current_weight_g, now});
+    }
+
+    String spool_id = rec.spool_id;
+    _spools.push_back(std::move(rec));
+
+    if (!save()) {
+        Serial.println("ERROR: Failed to save after addSpoolRecord.");
+    }
+
+    return spool_id;
+}
+
 // P1.8: Archive — soft delete, retains tag_uid for reactivation
 bool InventoryManager::archiveSpool(const String& spool_id) {
     int idx = findIndex(spool_id);
