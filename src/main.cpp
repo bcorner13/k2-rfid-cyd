@@ -15,6 +15,7 @@
 #include <inventory_manager.h>
 #include <filament_db.h>
 #include <network_manager.h>
+#include <feedback.h>
 #include <ui/screens/screen_about.h>
 
 void setup() {
@@ -62,6 +63,7 @@ void setup() {
     sysState.init();
     config.init();
     inventory.init();
+    feedback.init();
 
     ui.init();
     screenAbout.init(); // Initialize the About screen widgets
@@ -76,5 +78,6 @@ void loop() {
     lv_tick_inc(now - last_ms);   // 🔴 THIS WAS MISSING
     last_ms = now;
     lv_timer_handler();
+    feedback.update();
     delay(5);
 }

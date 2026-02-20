@@ -6,6 +6,7 @@
 #include <rfid_driver.h>
 #include <system_state.h>
 #include <inventory_manager.h>
+#include <feedback.h>
 
 // Include screen headers from the new include path
 #include <ui/screens/screen_main.h>
@@ -174,9 +175,11 @@ void UIManager::event_handler(lv_event_t* e) {
                 ui.updateDashboardFromSpool(readSpool);
                 ui.screenMain.setWriteStatus("Read OK", true, false);
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                feedback.readSuccess();
             } else {
                 ui.screenMain.setWriteStatus("No tag / Read failed", false, false);
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+                feedback.operationFailed();
             }
             ui.updateButtonStates();
         }
@@ -188,9 +191,11 @@ void UIManager::event_handler(lv_event_t* e) {
             if (rfid.writeCFSTag(ui.currentSpool)) {
                 ui.screenMain.setWriteStatus("Write OK", true, false);
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                feedback.writeSuccess();
             } else {
                 ui.screenMain.setWriteStatus("Write failed", false, false);
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+                feedback.operationFailed();
             }
             ui.updateButtonStates();
         }
@@ -203,6 +208,7 @@ void UIManager::event_handler(lv_event_t* e) {
 
             TagData tag;
             if (rfid.readTag(tag)) {
+                feedback.tagDetected();
                 String uid = tag.formatUID();
                 const SpoolRecord* existing = inventory.getSpoolByUID(uid);
                 if (existing) {
@@ -223,6 +229,7 @@ void UIManager::event_handler(lv_event_t* e) {
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
             } else {
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+                feedback.operationFailed();
             }
             ui.updateButtonStates();
             ui.screenInventory.populate();
@@ -245,6 +252,7 @@ void UIManager::event_handler(lv_event_t* e) {
             lv_obj_add_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
             // Refresh the detail screen
             ui.screenSpoolDetail.loadSpool(ui.screenSpoolDetail.currentSpoolId);
+            feedback.spoolSaved();
             Serial.printf("Weight updated: %s → %dg\n",
                           ui.screenSpoolDetail.currentSpoolId.c_str(), (int)newWeight);
         }
@@ -263,9 +271,11 @@ void UIManager::event_handler(lv_event_t* e) {
 
             if (rfid.writeCFSTag(writeData)) {
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                feedback.writeSuccess();
                 Serial.printf("Tag written for spool %s\n", rec->spool_id.c_str());
             } else {
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+                feedback.operationFailed();
                 Serial.println("Tag write failed");
             }
             ui.updateButtonStates();
@@ -334,6 +344,7 @@ void UIManager::event_handler(lv_event_t* e) {
             }
 
             Serial.printf("Custom spool created: %s\n", newId.c_str());
+            feedback.spoolSaved();
 
             if (obj == ui.screenCustomEntry.btnSaveWrite) {
                 // Navigate to spool detail for tag writing
@@ -351,8 +362,10 @@ void UIManager::event_handler(lv_event_t* e) {
 
             if (network.updateFilamentDB()) {
                 sysState.handleEvent(SystemEvent::DB_UPDATE_SUCCESS);
+                feedback.dbUpdateSuccess();
             } else {
                 sysState.handleEvent(SystemEvent::DB_UPDATE_FAILED);
+                feedback.dbUpdateFailed();
             }
             ui.updateButtonStates();
         }
