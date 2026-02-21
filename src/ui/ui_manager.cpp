@@ -1,3 +1,4 @@
+#include <esp_task_wdt.h>
 #include <ui/ui_manager.h>
 #include <ui/color_palette.h>
 #include <filament_db.h>
@@ -36,13 +37,17 @@ void UIManager::init() {
         ); // Replaced lv_palette_main with lv_color_make
     lv_display_set_theme(disp, theme);
 
+    // Disable watchdog during UI init — creating screens with many LVGL
+    // objects can exceed the default WDT timeout.
+    esp_task_wdt_delete(NULL);
+
     screenMain.init();
     screenLibrary.init();
     screenSettings.init();
     screenAbout.init();
     screenInventory.init();
-    screenSpoolDetail.init();
-    screenCustomEntry.init();
+    screenSpoolDetail.init();   // deferred — actual creation on first show()
+    screenCustomEntry.init();   // deferred — actual creation on first show()
 
     // Register event handlers once (not on every screen transition)
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
@@ -60,27 +65,13 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenSettings.btnRestart, event_handler, LV_EVENT_CLICKED, NULL);
 
     lv_obj_add_event_cb(screenAbout.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-
     lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-
     lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnAddCustom, event_handler, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_add_event_cb(screenCustomEntry.btnCancel, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnPrev, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnNext, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnSave, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnSaveWrite, event_handler, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnWriteTag, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnUnlinkTag, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnArchive, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnDelete, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnWeightOk, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnWeightCancel, event_handler, LV_EVENT_CLICKED, NULL);
+    // Spool detail + custom entry event handlers registered lazily in
+    // showSpoolDetail() / showCustomEntry() on first navigation.
 
     createColorPicker();
     createOverlay();
@@ -90,6 +81,10 @@ void UIManager::init() {
     updateDashboardFromSpool(defaultSpool);
 
     showMainScreen();
+
+    // Re-enable watchdog for normal operation
+    esp_task_wdt_add(NULL);
+    Serial.println("UI init complete");
 }
 
 void UIManager::update() {
@@ -133,12 +128,14 @@ void UIManager::updateButtonStates() {
     setEnabled(screenInventory.btnScanTag, !busy);
     setEnabled(screenInventory.btnAddCustom, !busy);
 
-    // Spool detail: action buttons disabled when busy, Back always active
-    setEnabled(screenSpoolDetail.btnUpdateWeight, !busy);
-    setEnabled(screenSpoolDetail.btnWriteTag, !busy);
-    setEnabled(screenSpoolDetail.btnUnlinkTag, !busy);
-    setEnabled(screenSpoolDetail.btnArchive, !busy);
-    setEnabled(screenSpoolDetail.btnDelete, !busy);
+    // Spool detail: action buttons disabled when busy (only if lazily initialized)
+    if (screenSpoolDetail.btnUpdateWeight) {
+        setEnabled(screenSpoolDetail.btnUpdateWeight, !busy);
+        setEnabled(screenSpoolDetail.btnWriteTag, !busy);
+        setEnabled(screenSpoolDetail.btnUnlinkTag, !busy);
+        setEnabled(screenSpoolDetail.btnArchive, !busy);
+        setEnabled(screenSpoolDetail.btnDelete, !busy);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -437,13 +434,34 @@ void UIManager::showAboutScreen() {
 }
 
 void UIManager::showSpoolDetail(const String& spool_id) {
+    static bool eventsRegistered = false;
     screenSpoolDetail.loadSpool(spool_id);
+    if (!eventsRegistered) {
+        eventsRegistered = true;
+        lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnWriteTag, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnUnlinkTag, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnArchive, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnDelete, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnWeightOk, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnWeightCancel, event_handler, LV_EVENT_CLICKED, NULL);
+    }
     screenSpoolDetail.show();
     updateButtonStates();
 }
 
 void UIManager::showCustomEntry() {
+    static bool eventsRegistered = false;
     screenCustomEntry.reset();
+    if (!eventsRegistered) {
+        eventsRegistered = true;
+        lv_obj_add_event_cb(screenCustomEntry.btnCancel, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnPrev, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnNext, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnSave, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnSaveWrite, event_handler, LV_EVENT_CLICKED, NULL);
+    }
     screenCustomEntry.show();
 }
 

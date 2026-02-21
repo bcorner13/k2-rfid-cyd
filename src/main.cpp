@@ -21,7 +21,7 @@
 void setup() {
     Serial.begin(115200);
     delay(500);
-    Serial.println("--- Booting Full Application ---");
+    Serial.println("--- Booting ---");
 
     // 1. Initialize display and show splash
     lvgl_display_init();
@@ -66,8 +66,8 @@ void setup() {
     feedback.init();
 
     ui.init();
-    screenAbout.init(); // Initialize the About screen widgets
-    screenFilamentSelect.init(); // Initialize the Filament Select screen widgets
+    // screenAbout is initialized inside UIManager::init() — do not double-init
+    screenFilamentSelect.init();
     Serial.println("UI Initialized");
 }
 

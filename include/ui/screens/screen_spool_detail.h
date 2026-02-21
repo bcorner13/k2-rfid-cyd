@@ -50,6 +50,8 @@ private:
     lv_obj_t* historyList;
 
     void createWeightModal();
+    void _lazyInit();
+    bool _initialized = false;
 };
 
 extern ScreenSpoolDetail screenSpoolDetail;

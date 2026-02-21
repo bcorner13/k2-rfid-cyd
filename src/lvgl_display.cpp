@@ -43,12 +43,6 @@ static void my_disp_flush(
     uint8_t *px_map
 )
 {
-    Serial.printf(
-        "FLUSH x:%d y:%d w:%d h:%d\n",
-        area->x1, area->y1,
-        area->x2 - area->x1 + 1,
-        area->y2 - area->y1 + 1
-    );
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
 
