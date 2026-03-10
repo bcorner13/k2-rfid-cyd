@@ -94,16 +94,24 @@ JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
 
 ## Hardware Notes (MaTouch ESP32-S3 4.3")
 
-> **Check board version first.** Version number is silkscreened on the PCB back. V1.3 and V2.0 differ significantly on GPIO2, 19, and 20 (backlight vs I2S audio).
+> **Board in use: V3.1** (confirmed from PCB front silkscreen, 2026-03-10). Version number is printed near the Makerfabs logo. V3.1 adds an onboard SPK connector for a small speaker. GPIO pin assignments for I2C, GPIO, and display are the same as V1.3/V2.0. Audio/backlight behaviour for V3.1 TBD — treat as V2.0 (`-DBOARD_MATOUCH_V2`) until confirmed.
 
-- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch and Mabee I2C port. PCF8563 RTC also on this bus. PN532 at 0x24 has no address conflict with any onboard device.
-- **Mabee I2C port:** HY2.0-4P Grove-compatible keyed connector → PN532 via Grove-to-DuPont adapter. PN532 DIP switch: S1=ON, S2=OFF (I2C mode).
-- **Mabee GPIO port:** GPIO19 / GPIO20 — **V1.3 only**; on V2.0 these pins are I2S audio (see below).
-- **Touch reset:** GPIO38 (V1.3+). V1.1 used a different RST pin. Touch INT: not connected (-1).
-- **Backlight:** GPIO2 PWM on **V1.3** only. On **V2.0** backlight is hardware always-on; to add PWM control solder R59 (remove R29 if screen flickers).
-- **Audio (V2.0 only):** I2S on GPIO2 (LRCLK) / GPIO19 (DIN) / GPIO20 (BCLK). No audio hardware on V1.3. Define `BOARD_MATOUCH_V2` to enable I2S path and skip backlight PWM init.
+- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch, PCF8563 RTC, Mabee I2C port, and PN532. No address conflicts: GT911=0x5D, PCF8563=0x51, PN532=0x24.
+- **Mabee I2C port** (HY2.0-4P, Grove-compatible) — pinout confirmed from V3.1 PCB silkscreen:
+  - Pin 1 (bottom): GND
+  - Pin 2: +3V3
+  - Pin 3: SDA → GPIO17
+  - Pin 4 (top): SCL → GPIO18
+  - PN532 DIP switch: S1=ON, S2=OFF for I2C mode. IRQ/RST not wired through 4-pin connector; library uses polling mode (IRQ=0xFF).
+- **Mabee GPIO port** (HY2.0-4P) — GPIO19 / GPIO20. Available on V1.3 and V3.1; used for I2S audio on V2.0.
+- **Touch reset:** GPIO38 (V1.3+). Touch INT: not connected (-1).
+- **Backlight:** GPIO2 PWM on V1.3. On V2.0: hardware always-on (solder R59 to restore PWM; remove R29 if screen flickers). V3.1: TBD.
+- **Audio:**
+  - V1.3: no audio hardware. Passive buzzer on Mabee GPIO1 (GPIO19) via LEDC `tone()`.
+  - V2.0: I2S on GPIO2 (LRCLK) / GPIO19 (DIN) / GPIO20 (BCLK). Build with `-DBOARD_MATOUCH_V2`.
+  - V3.1: onboard SPK connector (+ / -). Likely same I2S as V2.0; use `-DBOARD_MATOUCH_V2` until confirmed.
 - **RTC:** PCF8563 onboard — use for timestamps, no NTP dependency.
 - **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10. Board ships with 32GB MicroSD.
-- **Display:** ESP32-S3 native RGB peripheral → LCD module 4300H40R10-V03 (panel driver IC: HX8664/HX8264). Driven in **16-bit RGB565** mode (panel is 24-bit capable; upper 8 data bits per channel unconnected). Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1. Clock: 16 MHz. Note: "ST7262" is not a chip on this board — it referred to an incorrect controller label carried over from Waveshare docs.
+- **Display:** ESP32-S3 native RGB peripheral → LCD module QT4300H40R10-V03 (panel IC: HX8664/HX8264). Driven in **16-bit RGB565** mode. Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1. Clock: 16 MHz. Note: "ST7262" label in older docs was incorrect — no such controller chip on this board.
 - **PSRAM:** 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
 - **Flash:** 16MB

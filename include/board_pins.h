@@ -4,11 +4,19 @@
  * @brief Single source of truth for all GPIO assignments on the
  *        Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3" (SKU: E32S3RGB43).
  *
- * Two hardware revisions exist. The version number is silkscreened on the PCB back.
- * Set -DBOARD_MATOUCH_V2 in build_flags for V2.0 boards.
+ * Hardware version is silkscreened on the PCB back (or front near the logo).
+ * Known versions: V1.1, V1.3, V2.0, V3.1. Use build flags to select:
  *
- * V1.3 default: backlight PWM on GPIO2, Mabee GPIO on GPIO19/20, no I2S.
- * V2.0 with -DBOARD_MATOUCH_V2: I2S audio on GPIO2/19/20, backlight always-on.
+ *   (default / no flag) → V1.3 behaviour: GPIO2=backlight PWM, GPIO19/20=Mabee GPIO
+ *   -DBOARD_MATOUCH_V2  → V2.0 behaviour: GPIO2/19/20=I2S audio, backlight always-on
+ *   -DBOARD_MATOUCH_V31 → V3.1 behaviour: onboard speaker via I2S, GPIO19/20=Mabee GPIO
+ *                          (add -DBOARD_MATOUCH_V2 as well to enable I2S audio path)
+ *
+ * V3.1 notes (confirmed from PCB silkscreen, 2026-03-10):
+ *   - Onboard SPK connector (+ / -) for small speaker — uses I2S internally
+ *   - Mabee I2C port: IO18/SCL (pin 4), IO17/SDA (pin 3), +3V3 (pin 2), GND (pin 1)
+ *   - Mabee GPIO port: IO19 (pin 3+?), IO20 (pin 4+?), +3V3, GND
+ *   - I2C / GPIO pin assignments same as V1.3/V2.0; backlight behaviour TBC
  */
 
 // ─── RGB display bus ────────────────────────────────────────────────────────
@@ -43,7 +51,13 @@
 #define PIN_TOUCH_RST   38
 #define PIN_TOUCH_INT   -1   // Not connected on MaTouch
 
-// ─── I2C bus (shared: GT911 + Mabee I2C + PCF8563 RTC + PN532) ─────────────
+// ─── I2C bus (shared: GT911 touch + Mabee I2C + PCF8563 RTC + PN532) ────────
+// Mabee I2C port (HY2.0-4P, Grove-compatible) — silkscreen confirmed on V3.1:
+//   Pin 1 (bottom): GND
+//   Pin 2:          +3V3
+//   Pin 3:          SDA  → GPIO17
+//   Pin 4 (top):    SCL  → GPIO18
+// I2C addresses: GT911=0x5D, PCF8563=0x51, PN532=0x24  (no conflicts)
 #define PIN_I2C_SDA     17
 #define PIN_I2C_SCL     18
 
