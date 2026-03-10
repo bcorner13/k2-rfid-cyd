@@ -13,10 +13,10 @@ A standalone, touchscreen-based RFID programmer for the Creality K2 Plus & CFS (
 
 | Component | Details |
 |-----------|---------|
-| **Board** | Waveshare ESP32-S3 Touch LCD 4.3" (**development board**) |
-| **Display** | 800×480 RGB LCD, LovyanGFX; touch via GT911 (I2C). Backlight/CTP reset via CH422G (U10). |
-| **RFID** | PN532 (13.56 MHz); MIFARE Classic 1K tags. |
-| **Docs** | [docs/board-variant-4.3C.md](docs/board-variant-4.3C.md) — board variant comparison, CH422G init. |
+| **Board** | [Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3"](https://www.makerfabs.com/esp32-s3-parallel-tft-with-touch-4-3-inch.html) (SKU: E32S3RGB43) |
+| **Display** | 800×480 IPS RGB LCD, LovyanGFX; touch via GT911 (I2C, GPIO17/18). Onboard PCF8563 RTC. |
+| **RFID** | PN532 (13.56 MHz); MIFARE Classic 1K tags. Connects via Mabee I2C port (Grove HY2.0-4P) + Grove-to-DuPont adapter. PN532 DIP switch: S1=ON S2=OFF (I2C mode). |
+| **Connector** | Mabee I2C → GPIO17 (SDA) / GPIO18 (SCL). No address conflict with onboard devices. |
 
 ## 📁 Documentation
 
@@ -36,7 +36,7 @@ pio run
 pio run -t upload
 ```
 
-Default env: `waveshare_s3_43` (PlatformIO).
+Default env: `matouch_s3_43` (PlatformIO).
 
 ## 📜 Credits & acknowledgments
 

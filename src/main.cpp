@@ -15,6 +15,8 @@
 #include <inventory_manager.h>
 #include <filament_db.h>
 #include <network_manager.h>
+#include <rfid_driver.h>
+#include <Wire.h>
 #include <feedback.h>
 #include <ui/screens/screen_about.h>
 
@@ -43,9 +45,21 @@ void setup() {
     // bool wifi_ok = WiFi.isConnected(); // Temporarily commented out for debugging
     // splash_update_status(0, wifi_ok ? WiFi.SSID().c_str() : "Not Connected", wifi_ok); // Commented out
 
-    // rfid.init(); // Temporarily commented out for debugging
-    bool rfid_ok = false; // Default to false when rfid is commented out
-    // bool rfid_ok = rfid.getFirmwareVersion() > 0; // Temporarily commented out for debugging
+    Wire.begin(17, 18);  // SDA=GPIO17, SCL=GPIO18 — Makerfabs MaTouch shared I2C bus (GT911 + Mabee/PN532)
+
+    // I2C bus scan — shows all responding device addresses
+    Serial.println("I2C scan:");
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0)
+            Serial.printf("  found 0x%02X\n", addr);
+    }
+    Serial.println("I2C scan done");
+
+    rfid.init();
+    uint32_t rfid_ver = rfid.getFirmwareVersion();
+    bool rfid_ok = rfid_ver > 0;
+    Serial.printf("RFID: %s (ver=0x%08X)\n", rfid_ok ? "OK" : "NOT FOUND", rfid_ver);
     // splash_update_status(1, rfid_ok ? "Available" : "Not Found", rfid_ok); // Commented out
 
     // For now, let's assume Bluetooth is available if the code compiles

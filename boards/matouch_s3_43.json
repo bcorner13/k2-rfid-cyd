@@ -29,7 +29,7 @@
     "arduino",
     "espidf"
   ],
-  "name": "Waveshare ESP32-S3 Touch LCD 4.3inch (Development Board)",
+  "name": "Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3inch",
   "upload": {
     "flash_size": "16MB",
     "maximum_ram_size": 327680,
@@ -37,6 +37,6 @@
     "require_upload_port": true,
     "speed": 460800
   },
-  "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4.3",
-  "vendor": "Waveshare"
+  "url": "https://www.makerfabs.com/esp32-s3-parallel-tft-with-touch-4-3-inch.html",
+  "vendor": "Makerfabs"
 }

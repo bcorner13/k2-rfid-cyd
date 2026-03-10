@@ -6,19 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Standalone RFID programmer for Creality K2 Plus CFS (Creality Filament System). ESP32-S3 firmware using Arduino framework, LVGL 9 UI, LovyanGFX display driver, and PN532 RFID reader/writer for MIFARE Classic 1K tags.
 
-**Target board:** Waveshare ESP32-S3 Touch LCD 4.3" (development board, NOT the 4.3C/AI Voice variant) — 800x480 RGB LCD, GT911 capacitive touch, CH422G I2C expander for display/touch control. Has RS-485 and CAN bus (unused). No audio subsystem, no RTC, no optocoupler I/O (those are 4.3C-only).
+**Target board:** Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3" (SKU: E32S3RGB43) — 800×480 IPS RGB LCD, GT911 capacitive touch, PCF8563 RTC onboard, Mabee I2C + GPIO connectors (Grove HY2.0-4P compatible). No CH422G expander. [Product page](https://www.makerfabs.com/esp32-s3-parallel-tft-with-touch-4-3-inch.html) | [GitHub](https://github.com/Makerfabs/ESP32-S3-Parallel-TFT-with-Touch-4.3inch)
+
+> **Previous board (retired):** Waveshare ESP32-S3 Touch LCD 4.3" — abandoned due to CH422G I2C address collision (occupies 0x20–0x27/0x30–0x3F, including PN532's hardwired 0x24). No usable I2C path to PN532 without board surgery. See `docs/CHECKPOINT.md` for full diagnosis.
 
 ## Build Commands
 
 ```bash
-pio run                          # Build (default env: waveshare_s3_43)
+pio run                          # Build (default env: matouch_s3_43)
 pio run -t upload                # Build and flash via UART USB-C port
 pio run -t uploadfs              # Upload LittleFS filesystem image
-pio run -e waveshare_s3_43       # Build for explicit environment
+pio run -e matouch_s3_43         # Build for explicit environment
 pio device monitor               # Serial monitor (115200 baud)
 ```
 
-Build requires C++17 (for ESP32_IO_Expander/CH422G). Full builds may take 2+ minutes due to linking. The board has two USB-C ports — use the **UART** port for upload/monitor.
+Build requires C++17. Full builds may take 2+ minutes due to linking. The board has two USB-C ports — use the **UART** port for upload/monitor.
 
 ## Architecture
 
@@ -83,19 +85,22 @@ JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
 - Headers in `include/`, implementations in `src/` (mirrored directory structure including `ui/screens/` and `ui/widgets/`)
 - Doxygen `@file`/`@brief` doc blocks in key headers and `main.cpp`
 - LVGL 9 API (not v8) — use `lv_obj_*` functions, flex/grid layouts
-- LovyanGFX configured in `include/LGFX_Config.h` (works on both dev 4.3 and production 4.3C — same display bus)
+- LovyanGFX configured in `include/LGFX_Config.h` — pin assignments target MaTouch; no CH422G expander
 - LVGL configuration in `include/lv_conf.h`
-- Custom board definition in `boards/waveshare_s3_43.json`
+- Custom board definition in `boards/matouch_s3_43.json`
 - ArduinoJson v7 used for JSON parsing (uses PSRAM when available)
 - Material type is 5 chars space-padded on RFID tag; trimmed for UI matching
 - CFS tag format spec: `docs/rfid/creality-k2plus-rfid-spec.md`
 
-## Hardware Notes
+## Hardware Notes (MaTouch ESP32-S3 4.3")
 
-- I2C bus (GPIO8 SDA, GPIO9 SCL) shared between GT911 touch, CH422G expander, and PN532 RFID (3 devices on dev board; 6 on production 4.3C)
-- CH422G (U10) controls display enable (EXIO2), touch reset (EXIO1), LCD reset (EXIO3), SD CS (EXIO4). Also has OC0-OC3 output pins for feedback hardware.
-- IO15/IO16 are RS-485 TX/RX on dev board (usable as GPIO when RS-485 terminal disconnected). On 4.3C they are I2S audio pins.
-- No RTC on dev board — use NTP for timestamps
-- Display uses 16-bit parallel RGB bus at 12 MHz (lowered to reduce jitter)
-- PSRAM: 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
-- Flash: 16MB
+- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch and Mabee I2C port. PCF8563 RTC also on this bus. PN532 at 0x24 has no address conflict with any onboard device.
+- **Mabee I2C port:** HY2.0-4P Grove-compatible keyed connector → PN532 via Grove-to-DuPont adapter. PN532 DIP switch: S1=ON, S2=OFF (I2C mode).
+- **Mabee GPIO port:** GPIO19 / GPIO20 — available for feedback hardware (LEDs, buzzer).
+- **Touch reset:** GPIO38. Touch INT: not connected (-1).
+- **Backlight:** GPIO2 (PWM, 5 kHz, 10-bit) on hardware V1.3; always-on on V2.0 unless R59 bridged.
+- **RTC:** PCF8563 onboard — use for timestamps, no NTP dependency.
+- **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10.
+- **Display:** ST7262 controller, 16-bit parallel RGB565 bus. Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R=45,48,47,21,14; G=5,6,7,15,16,4; B=8,3,46,9,1.
+- **PSRAM:** 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
+- **Flash:** 16MB
