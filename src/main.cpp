@@ -29,9 +29,11 @@ void setup() {
     lvgl_display_init();
     Serial.println("Splash Screen Initialized");
 
-    // --- Initialize Sound (Sensor AD Pin = GPIO 11) ---
-    // uiSound.init(11); // Commented out as sound is tabled
-    // uiSound.playStartup(); // Play a startup chime // Commented out as sound is tabled
+    // --- Initialize Sound ---
+    // V1.3: passive buzzer on Mabee GPIO1 (GPIO19). V2.0: I2S on GPIO2/19/20.
+    // Uncomment once audio hardware is connected and board version confirmed.
+    // uiSound.init();
+    // uiSound.playStartup();
 
     // 2. Add status labels (these are commented out, so no labels are added)
     // splash_add_status("WiFi", false);

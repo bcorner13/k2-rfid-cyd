@@ -94,13 +94,16 @@ JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
 
 ## Hardware Notes (MaTouch ESP32-S3 4.3")
 
+> **Check board version first.** Version number is silkscreened on the PCB back. V1.3 and V2.0 differ significantly on GPIO2, 19, and 20 (backlight vs I2S audio).
+
 - **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch and Mabee I2C port. PCF8563 RTC also on this bus. PN532 at 0x24 has no address conflict with any onboard device.
 - **Mabee I2C port:** HY2.0-4P Grove-compatible keyed connector → PN532 via Grove-to-DuPont adapter. PN532 DIP switch: S1=ON, S2=OFF (I2C mode).
-- **Mabee GPIO port:** GPIO19 / GPIO20 — available for feedback hardware (LEDs, buzzer).
-- **Touch reset:** GPIO38. Touch INT: not connected (-1).
-- **Backlight:** GPIO2 (PWM, 5 kHz, 10-bit) on hardware V1.3; always-on on V2.0 unless R59 bridged.
+- **Mabee GPIO port:** GPIO19 / GPIO20 — **V1.3 only**; on V2.0 these pins are I2S audio (see below).
+- **Touch reset:** GPIO38 (V1.3+). V1.1 used a different RST pin. Touch INT: not connected (-1).
+- **Backlight:** GPIO2 PWM on **V1.3** only. On **V2.0** backlight is hardware always-on; to add PWM control solder R59 (remove R29 if screen flickers).
+- **Audio (V2.0 only):** I2S on GPIO2 (LRCLK) / GPIO19 (DIN) / GPIO20 (BCLK). No audio hardware on V1.3. Define `BOARD_MATOUCH_V2` to enable I2S path and skip backlight PWM init.
 - **RTC:** PCF8563 onboard — use for timestamps, no NTP dependency.
-- **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10.
-- **Display:** ST7262 controller, 16-bit parallel RGB565 bus. Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R=45,48,47,21,14; G=5,6,7,15,16,4; B=8,3,46,9,1.
+- **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10. Board ships with 32GB MicroSD.
+- **Display:** ESP32-S3 native RGB peripheral → LCD module 4300H40R10-V03 (panel driver IC: HX8664/HX8264). Driven in **16-bit RGB565** mode (panel is 24-bit capable; upper 8 data bits per channel unconnected). Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1. Clock: 16 MHz. Note: "ST7262" is not a chip on this board — it referred to an incorrect controller label carried over from Waveshare docs.
 - **PSRAM:** 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
 - **Flash:** 16MB
