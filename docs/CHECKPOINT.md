@@ -67,7 +67,19 @@ PN532 I2C address: `0x24`. Onboard devices: GT911 @ `0x14` or `0x5D`, PCF8563 @ 
 | Firmware (MaTouch target) | ✅ Migration complete |
 | LGFX_Config.h migration | ✅ Pins updated |
 | rfid_driver.cpp I2C mode | ✅ Reverted from SPI |
-| Hardware wiring | ⏳ Verify on bench |
+| Hardware wiring | ✅ Confirmed (Mabee I2C) |
+| WiFi Stability | ✅ Fixed (Non-blocking + WDT) |
+| Display Stability | ✅ Fixed (Internal RAM + 12MHz) |
+| RFID Auto-Read | ✅ Implemented |
+
+---
+
+## Post-Migration Enhancements (2026-03-10)
+
+1. **Display Stability:** Moved LVGL buffer to Internal RAM and reduced PCLK to 12MHz to eliminate "screen shakes" during touch/I2C activity.
+2. **WiFi Reliability:** Switched to non-blocking `WiFiManager`, added a dedicated Setup screen, and increased watchdog timeouts to prevent reboots during portal use.
+3. **RFID Auto-Read:** Implemented background polling task that automatically detects and reads tags when waving them near the reader, providing instant audio/visual feedback.
+4. **Clean Boot:** Cleaned up GPIO initialization to remove "Invalid pin" errors and added a 10-second status review window during boot.
 
 ---
 
@@ -255,8 +267,7 @@ MicroSD SPI pinout for locating socket pads: pin2=DI(MOSI), pin5=CLK, pin7=DO(MI
 
 ## Next steps (RFID)
 
-1. Flip PN532 DIP switches: SEL0=LOW, SEL1=HIGH
-2. Solder 30 AWG wire from PN532 SCK/MOSI/MISO to SD card socket pads (GPIO12/11/13)
-3. Connect PN532 SS → J6 AD (GPIO6), VCC → J6 3V3, GND → J6 GND
-4. `pio run -t upload` and check serial for "PN532 found on SPI bus"
-5. Investigate GPIO46 buzzer conflict (display uses GPIO46 as HSYNC in LGFX_Config.h)
+- ✅ Migrate to MaTouch board (complete).
+- ✅ Implement Auto-Read task (complete).
+- ⏳ Finalize CFS tag data field mapping (ongoing).
+- ⏳ Implement sector mirror voting validation (FSD 7.8).

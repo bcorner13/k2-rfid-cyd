@@ -23,8 +23,8 @@
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-#include <lgfx/v1/misc/Panel_Device.hpp>
 #include <lgfx/v1/touch/Touch_GT911.hpp>
+#include "board_pins.h"
 
 class LGFX : public lgfx::LGFX_Device
 {
@@ -46,36 +46,36 @@ public:
             cfg.panel = &_panel_instance;
 
             // Blue channel — B0(LSB)..B4(MSB)
-            cfg.pin_d0  = 8;   // B0
-            cfg.pin_d1  = 3;   // B1
-            cfg.pin_d2  = 46;  // B2
-            cfg.pin_d3  = 9;   // B3
-            cfg.pin_d4  = 1;   // B4
+            cfg.pin_d0  = PIN_LCD_B0;
+            cfg.pin_d1  = PIN_LCD_B1;
+            cfg.pin_d2  = PIN_LCD_B2;
+            cfg.pin_d3  = PIN_LCD_B3;
+            cfg.pin_d4  = PIN_LCD_B4;
 
             // Green channel — G0(LSB)..G5(MSB)
-            cfg.pin_d5  = 5;   // G0
-            cfg.pin_d6  = 6;   // G1
-            cfg.pin_d7  = 7;   // G2
-            cfg.pin_d8  = 15;  // G3
-            cfg.pin_d9  = 16;  // G4
-            cfg.pin_d10 = 4;   // G5
+            cfg.pin_d5  = PIN_LCD_G0;
+            cfg.pin_d6  = PIN_LCD_G1;
+            cfg.pin_d7  = PIN_LCD_G2;
+            cfg.pin_d8  = PIN_LCD_G3;
+            cfg.pin_d9  = PIN_LCD_G4;
+            cfg.pin_d10 = PIN_LCD_G5;
 
             // Red channel — R0(LSB)..R4(MSB)
-            cfg.pin_d11 = 45;  // R0
-            cfg.pin_d12 = 48;  // R1
-            cfg.pin_d13 = 47;  // R2
-            cfg.pin_d14 = 21;  // R3
-            cfg.pin_d15 = 14;  // R4
+            cfg.pin_d11 = PIN_LCD_R0;
+            cfg.pin_d12 = PIN_LCD_R1;
+            cfg.pin_d13 = PIN_LCD_R2;
+            cfg.pin_d14 = PIN_LCD_R3;
+            cfg.pin_d15 = PIN_LCD_R4;
 
             // Sync/control signals
-            cfg.pin_henable = 40;  // DE
-            cfg.pin_vsync   = 41;
-            cfg.pin_hsync   = 39;
-            cfg.pin_pclk    = 42;
+            cfg.pin_henable = PIN_LCD_DE;
+            cfg.pin_vsync   = PIN_LCD_VSYNC;
+            cfg.pin_hsync   = PIN_LCD_HSYNC;
+            cfg.pin_pclk    = PIN_LCD_PCLK;
 
-            // 16 MHz per Makerfabs official code. Spec typical is 30 MHz (24-bit mode);
-            // lower is safe on ESP32-S3 RGB peripheral.
-            cfg.freq_write = 16000000;
+            // 12 MHz is safer for ESP32-S3 RGB peripheral to prevent drift/shakes
+            // when PSRAM or I2C (touch) is active.
+            cfg.freq_write = 12000000;
 
             cfg.hsync_polarity    = 0;
             cfg.hsync_front_porch = 8;
@@ -105,7 +105,7 @@ public:
         { // Backlight — V1.3: GPIO2 PWM. On V2.0 this pin is I2S_LRCLK; skip.
           // V2.0: solder R59 to restore independent BL control; remove R29 if flicker.
             auto cfg = _light_instance.config();
-            cfg.pin_bl      = 2;
+            cfg.pin_bl      = PIN_LCD_BL;
             cfg.invert      = false;
             cfg.freq        = 5000;
             cfg.pwm_channel = 7;
@@ -119,10 +119,10 @@ public:
             cfg.i2c_port = 0;
             cfg.i2c_addr = 0x5D;
             cfg.freq     = 100000;
-            cfg.pin_sda  = 17;
-            cfg.pin_scl  = 18;
-            cfg.pin_int  = -1;   // INT not connected on MaTouch
-            cfg.pin_rst  = 38;   // RST on GPIO38 (V1.3); V1.1 used a different pin
+            cfg.pin_sda  = PIN_TOUCH_SDA;
+            cfg.pin_scl  = PIN_TOUCH_SCL;
+            cfg.pin_int  = PIN_TOUCH_INT;
+            cfg.pin_rst  = PIN_TOUCH_RST;
             cfg.x_min = 0;
             cfg.x_max = 799;
             cfg.y_min = 0;

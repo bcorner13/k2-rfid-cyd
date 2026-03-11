@@ -16,8 +16,8 @@
 // IRQ and RESET are not wired through the 4-pin Mabee connector.
 // 0xFF passed to constructor → library falls back to polling (delay-based ready check).
 // Hardware reset happens at power-on; software reset not needed for normal operation.
-#define PN532_IRQ    (0xFF)   // Not connected — polling mode
-#define PN532_RESET  (0xFF)   // Not connected — power-on reset only
+#define PN532_IRQ    (-1)   // Not connected — polling mode
+#define PN532_RESET  (-1)   // Not connected — power-on reset only
 
 RFIDDriver rfid;
 

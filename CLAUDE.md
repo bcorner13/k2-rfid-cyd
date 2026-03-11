@@ -25,9 +25,9 @@ Build requires C++17. Full builds may take 2+ minutes due to linking. The board 
 ## Architecture
 
 ### Boot sequence (main.cpp)
-`setup()`: Serial → `lvgl_display_init()` (splash) → `filamentDB.init()` (LittleFS JSON) → `sysState.init()` → `config.init()` → `ui.init()` → screen inits → `loop()`: `lv_tick_inc()` + `lv_timer_handler()` every 5ms.
+`setup()`: Serial → `lvgl_display_init()` (splash) → `filamentDB.init()` (LittleFS JSON) → `network.init()` → `sysState.init()` → `config.init()` → `ui.init()` → `loop()`: `lv_tick_inc()` + `lv_timer_handler()` + `network.process()` + `rfid_task()`.
 
-WiFi, RFID, and sound init are currently commented out pending hardware verification.
+WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into the boot sequence and main loop.
 
 ### Module map
 

@@ -10,7 +10,21 @@ AppNetwork network;
 AppNetwork::AppNetwork() {}
 
 void AppNetwork::init() {
-    // WiFiManager handles mode automatically
+    wm.setDebugOutput(true);
+    wm.setConfigPortalBlocking(false);  // Non-blocking portal!
+
+    // Set callback to save custom params
+    wm.setSaveParamsCallback([this]() {
+        if (this->custom_printer_ip) {
+            config.data.printer_ip = this->custom_printer_ip->getValue();
+            config.save();
+            Serial.println("Printer IP saved from WiFi Portal");
+        }
+    });
+}
+
+void AppNetwork::process() {
+    wm.process();
 }
 
 bool AppNetwork::connect() {
@@ -24,26 +38,22 @@ bool AppNetwork::connect() {
 }
 
 void AppNetwork::startConfigPortal() {
-    // Add custom parameter for Printer IP
-    WiFiManagerParameter custom_printer_ip("printer_ip", "Printer IP", config.data.printer_ip.c_str(), 40);
-    wm.addParameter(&custom_printer_ip);
-
-    // Set title
-    wm.setTitle("K2 RFID Tool Setup");
-
-    // Start Portal (Blocking!)
-    // We should probably show a screen on the LCD before calling this
-    if (!wm.startConfigPortal("K2-RFID-SETUP")) {
-        Serial.println("failed to connect and hit timeout");
-        delay(3000);
-        ESP.restart();
+    // Ensure parameter object exists and is added only once
+    if (!custom_printer_ip) {
+        custom_printer_ip = new WiFiManagerParameter("printer_ip", "Printer IP", config.data.printer_ip.c_str(), 40);
+        wm.addParameter(custom_printer_ip);
     }
 
-    // Save custom param
-    config.data.printer_ip = custom_printer_ip.getValue();
-    config.save();
+    wm.setTitle("K2 RFID Tool Setup");
+    wm.startConfigPortal("K2-RFID-SETUP");
+}
 
-    Serial.println("connected...yeey :)");
+void AppNetwork::reset() {
+    Serial.println("WiFi: Clearing settings and restarting...");
+    wm.resetSettings();
+    WiFi.disconnect(true, true); // Clear SSID/Password from NVS
+    delay(1000);
+    ESP.restart();
 }
 
 bool AppNetwork::isConnected() {
