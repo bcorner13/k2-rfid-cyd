@@ -19,6 +19,7 @@ enum class SystemState {
 
     // Network operations
     UPDATING_DATABASE,
+    WIFI_CONFIG,
 
     // System states
     ERROR,
@@ -48,6 +49,7 @@ enum class SystemEvent {
     DB_UPDATE_REQUEST,
     DB_UPDATE_SUCCESS,
     DB_UPDATE_FAILED,
+    WIFI_CONFIG_REQUEST,
 
     // Error recovery
     USER_DISMISS,

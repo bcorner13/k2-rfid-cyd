@@ -1,74 +1,99 @@
 #ifndef LGFX_CONFIG_H_
 #define LGFX_CONFIG_H_
 
-/* Target board: Waveshare ESP32-S3-Touch-LCD-4.3 (dev board). Works on 4.3C too — same display bus. */
+/* Target board: Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3" (SKU: E32S3RGB43).
+ *
+ * Display: 4300H40R10-V03 LCD module, panel IC HX8664/HX8264.
+ *   Driven in 16-bit RGB565 mode via ESP32-S3 native RGB LCD peripheral (no
+ *   separate controller chip). Panel is 24-bit capable; upper 8 bits of each
+ *   channel are not connected on this board.
+ *
+ * I2C bus: GPIO17 (SDA) / GPIO18 (SCL) — GT911 touch + Mabee I2C port (PN532).
+ * Touch RST: GPIO38. Touch INT: not connected (-1).
+ *
+ * Hardware versions:
+ *   V1.3 — backlight PWM on GPIO2; Mabee GPIO on GPIO19/20. No I2S audio.
+ *   V2.0 — backlight always-on (solder R59 to enable PWM, remove R29 if flicker);
+ *           GPIO2=I2S_LRCLK, GPIO19=I2S_DIN, GPIO20=I2S_BCLK. No Mabee GPIO.
+ *
+ * Pin bit-order: R0/G0/B0 = LSB of each channel → d11/d5/d0 respectively.
+ * Source: Makerfabs Wiki example code (Arduino_GFX_Library v1.4.7 variant).
+ */
 
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-/* 4.3C backlight is EXIO_PWM from U10 (I2C expander), not direct GPIO – no Light_PWM */
 #include <lgfx/v1/touch/Touch_GT911.hpp>
-
-/*
- * 4.3C WROOM pinout (for reference):
- *   LCD I2C: IO8 = SDA, IO9 = SCL (shared with Audio/RTC; touch GT911 and U10 on same bus).
- *   Touch:   IO4 = CTP IRQ.  CTP RST = EXIO1 (via U10, not direct GPIO).
- *   Display: EXIO2 = DISP (backlight/display control via U10). EXIO_PWM = U10 pin 10 (brightness).
- */
+#include "board_pins.h"
 
 class LGFX : public lgfx::LGFX_Device
 {
 public:
-    lgfx::v1::Bus_RGB   _bus_instance;
-    lgfx::v1::Panel_RGB _panel_instance;
+    lgfx::v1::Bus_RGB     _bus_instance;
+    lgfx::v1::Panel_RGB   _panel_instance;
     lgfx::v1::Touch_GT911 _touch_instance;
+#if !defined(BOARD_MATOUCH_V2) // V2.0 backlight is hardware always-on
+    lgfx::v1::Light_PWM   _light_instance;
+#endif
 
 public:
     LGFX(void)
     {
-        { // Configure RGB bus
+        { // Configure RGB bus — 16-bit parallel RGB565
+          // d0=B0(LSB) … d4=B4(MSB), d5=G0(LSB) … d10=G5(MSB), d11=R0(LSB) … d15=R4(MSB)
+          // Confirmed from Makerfabs wiki code: R0=45,R4=14; G0=5,G5=4; B0=8,B4=1
             auto cfg = _bus_instance.config();
             cfg.panel = &_panel_instance;
-            cfg.pin_d0 = 14;  // B3
-            cfg.pin_d1 = 38;  // B4
-            cfg.pin_d2 = 18;  // B5
-            cfg.pin_d3 = 17;  // B6
-            cfg.pin_d4 = 10;  // B7
-            cfg.pin_d5 = 39;  // G2
-            cfg.pin_d6 = 0;   // G3
-            cfg.pin_d7 = 45;  // G4
-            cfg.pin_d8 = 48;  // G5
-            cfg.pin_d9 = 47;  // G6
-            cfg.pin_d10 = 21; // G7
-            cfg.pin_d11 = 1;  // R3
-            cfg.pin_d12 = 2;  // R4
-            cfg.pin_d13 = 42; // R5
-            cfg.pin_d14 = 41; // R6
-            cfg.pin_d15 = 40; // R7
 
-            cfg.pin_henable = 5;
-            cfg.pin_vsync = 3;
-            cfg.pin_hsync = 46;
-            cfg.pin_pclk = 7;
+            // Blue channel — B0(LSB)..B4(MSB)
+            cfg.pin_d0  = PIN_LCD_B0;
+            cfg.pin_d1  = PIN_LCD_B1;
+            cfg.pin_d2  = PIN_LCD_B2;
+            cfg.pin_d3  = PIN_LCD_B3;
+            cfg.pin_d4  = PIN_LCD_B4;
 
-            cfg.freq_write = 12000000;  /* 12 MHz; lower can reduce RGB jitter/drift (ESP FAQ) */
-            cfg.hsync_polarity = 0;
+            // Green channel — G0(LSB)..G5(MSB)
+            cfg.pin_d5  = PIN_LCD_G0;
+            cfg.pin_d6  = PIN_LCD_G1;
+            cfg.pin_d7  = PIN_LCD_G2;
+            cfg.pin_d8  = PIN_LCD_G3;
+            cfg.pin_d9  = PIN_LCD_G4;
+            cfg.pin_d10 = PIN_LCD_G5;
+
+            // Red channel — R0(LSB)..R4(MSB)
+            cfg.pin_d11 = PIN_LCD_R0;
+            cfg.pin_d12 = PIN_LCD_R1;
+            cfg.pin_d13 = PIN_LCD_R2;
+            cfg.pin_d14 = PIN_LCD_R3;
+            cfg.pin_d15 = PIN_LCD_R4;
+
+            // Sync/control signals
+            cfg.pin_henable = PIN_LCD_DE;
+            cfg.pin_vsync   = PIN_LCD_VSYNC;
+            cfg.pin_hsync   = PIN_LCD_HSYNC;
+            cfg.pin_pclk    = PIN_LCD_PCLK;
+
+            // 12 MHz is safer for ESP32-S3 RGB peripheral to prevent drift/shakes
+            // when PSRAM or I2C (touch) is active.
+            cfg.freq_write = 12000000;
+
+            cfg.hsync_polarity    = 0;
             cfg.hsync_front_porch = 8;
             cfg.hsync_pulse_width = 4;
-            cfg.hsync_back_porch = 8;
-            cfg.vsync_polarity = 0;
+            cfg.hsync_back_porch  = 8;
+            cfg.vsync_polarity    = 0;
             cfg.vsync_front_porch = 8;
             cfg.vsync_pulse_width = 4;
-            cfg.vsync_back_porch = 8;
-            cfg.pclk_active_neg = 1;
+            cfg.vsync_back_porch  = 8;
+            cfg.pclk_active_neg   = 1;
             _bus_instance.config(cfg);
         }
 
         { // Configure display panel
             auto cfg = _panel_instance.config();
-            cfg.panel_width = 800;   // Correct width
-            cfg.panel_height = 480;  // Correct height
-            cfg.memory_width = 800;
+            cfg.panel_width   = 800;
+            cfg.panel_height  = 480;
+            cfg.memory_width  = 800;
             cfg.memory_height = 480;
             cfg.offset_x = 0;
             cfg.offset_y = 0;
@@ -76,17 +101,28 @@ public:
             _panel_instance.setBus(&_bus_instance);
         }
 
-        /* Backlight on 4.3C: EXIO_PWM from U10 pin 10 (I2C expander), not ESP32 GPIO. See separate backlight control via U10 I2C. */
+#if !defined(BOARD_MATOUCH_V2)
+        { // Backlight — V1.3: GPIO2 PWM. On V2.0 this pin is I2S_LRCLK; skip.
+          // V2.0: solder R59 to restore independent BL control; remove R29 if flicker.
+            auto cfg = _light_instance.config();
+            cfg.pin_bl      = PIN_LCD_BL;
+            cfg.invert      = false;
+            cfg.freq        = 5000;
+            cfg.pwm_channel = 7;
+            _light_instance.config(cfg);
+            _panel_instance.setLight(&_light_instance);
+        }
+#endif
 
-        { // Configure touch (I2C, separate from RGB display bus)
+        { // Configure touch — GT911, I2C on GPIO17/18, RST on GPIO38 (V1.3+)
             auto cfg = _touch_instance.config();
             cfg.i2c_port = 0;
             cfg.i2c_addr = 0x5D;
-            cfg.freq = 100000;   // 100kHz can be more stable than 400kHz with long wires
-            cfg.pin_sda = 8;
-            cfg.pin_scl = 9;
-            cfg.pin_int = 4;
-            cfg.pin_rst = -1;
+            cfg.freq     = 100000;
+            cfg.pin_sda  = PIN_TOUCH_SDA;
+            cfg.pin_scl  = PIN_TOUCH_SCL;
+            cfg.pin_int  = PIN_TOUCH_INT;
+            cfg.pin_rst  = PIN_TOUCH_RST;
             cfg.x_min = 0;
             cfg.x_max = 799;
             cfg.y_min = 0;

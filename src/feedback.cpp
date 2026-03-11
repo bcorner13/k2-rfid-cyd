@@ -5,12 +5,18 @@ Feedback feedback;
 
 void Feedback::init() {
 #if FEEDBACK_HARDWARE_ENABLED
-    pinMode(FEEDBACK_PIN_BUZZER, OUTPUT);
-    pinMode(FEEDBACK_PIN_LED_GREEN, OUTPUT);
-    pinMode(FEEDBACK_PIN_LED_RED, OUTPUT);
-    digitalWrite(FEEDBACK_PIN_BUZZER, LOW);
-    digitalWrite(FEEDBACK_PIN_LED_GREEN, LOW);
-    digitalWrite(FEEDBACK_PIN_LED_RED, LOW);
+    if (FEEDBACK_PIN_BUZZER >= 0) {
+        pinMode(FEEDBACK_PIN_BUZZER, OUTPUT);
+        digitalWrite(FEEDBACK_PIN_BUZZER, LOW);
+    }
+    if (FEEDBACK_PIN_LED_GREEN >= 0) {
+        pinMode(FEEDBACK_PIN_LED_GREEN, OUTPUT);
+        digitalWrite(FEEDBACK_PIN_LED_GREEN, LOW);
+    }
+    if (FEEDBACK_PIN_LED_RED >= 0) {
+        pinMode(FEEDBACK_PIN_LED_RED, OUTPUT);
+        digitalWrite(FEEDBACK_PIN_LED_RED, LOW);
+    }
     _initialized = true;
     Serial.printf("Feedback: init OK (buzzer=%d, green=%d, red=%d)\n",
                   FEEDBACK_PIN_BUZZER, FEEDBACK_PIN_LED_GREEN, FEEDBACK_PIN_LED_RED);
@@ -114,14 +120,14 @@ void Feedback::beep(uint16_t duration_ms) {
 void Feedback::ledGreen(bool on) {
     _greenOn = on;
 #if FEEDBACK_HARDWARE_ENABLED
-    if (_initialized) digitalWrite(FEEDBACK_PIN_LED_GREEN, on ? HIGH : LOW);
+    if (_initialized && FEEDBACK_PIN_LED_GREEN >= 0) digitalWrite(FEEDBACK_PIN_LED_GREEN, on ? HIGH : LOW);
 #endif
 }
 
 void Feedback::ledRed(bool on) {
     _redOn = on;
 #if FEEDBACK_HARDWARE_ENABLED
-    if (_initialized) digitalWrite(FEEDBACK_PIN_LED_RED, on ? HIGH : LOW);
+    if (_initialized && FEEDBACK_PIN_LED_RED >= 0) digitalWrite(FEEDBACK_PIN_LED_RED, on ? HIGH : LOW);
 #endif
 }
 
@@ -154,6 +160,6 @@ void Feedback::startBeepPattern(uint8_t count, uint16_t onMs, uint16_t offMs) {
 void Feedback::buzzerSet(bool on) {
     _buzzerOn = on;
 #if FEEDBACK_HARDWARE_ENABLED
-    if (_initialized) digitalWrite(FEEDBACK_PIN_BUZZER, on ? HIGH : LOW);
+    if (_initialized && FEEDBACK_PIN_BUZZER >= 0) digitalWrite(FEEDBACK_PIN_BUZZER, on ? HIGH : LOW);
 #endif
 }

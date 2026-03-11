@@ -61,6 +61,9 @@ private:
     lv_obj_t* modalColor;
     void createColorPicker();
 
+    void _lazyInit();
+    bool _initialized = false;
+
     // Step 5 review labels
     lv_obj_t* lblReviewBrand;
     lv_obj_t* lblReviewName;

@@ -1,9 +1,23 @@
 #include <rfid_driver.h>
 #include <esp_rom_crc.h>
+#include <Wire.h>
 
-// Define pins for PN532
-#define PN532_IRQ   (1)
-#define PN532_RESET (2)
+// PN532 I2C mode — connected to Mabee I2C port (HY2.0-4P, 4-pin Grove-compatible).
+//
+// Mabee I2C port pinout (silkscreened on PCB, pin 1 = bottom/GND):
+//   Pin 1: GND
+//   Pin 2: +3V3
+//   Pin 3: SDA  → GPIO17  (Wire, shared with GT911 touch + PCF8563 RTC)
+//   Pin 4: SCL  → GPIO18
+//
+// PN532 DIP switch: S1=ON, S2=OFF (I2C mode). I2C address: 0x24.
+// No address conflict: GT911=0x5D, PCF8563=0x51, PN532=0x24.
+//
+// IRQ and RESET are not wired through the 4-pin Mabee connector.
+// 0xFF passed to constructor → library falls back to polling (delay-based ready check).
+// Hardware reset happens at power-on; software reset not needed for normal operation.
+#define PN532_IRQ    (-1)   // Not connected — polling mode
+#define PN532_RESET  (-1)   // Not connected — power-on reset only
 
 RFIDDriver rfid;
 
@@ -17,8 +31,20 @@ RFIDDriver::RFIDDriver() : nfc(nullptr), currentUidLen(0), keyACached(false) {
 }
 
 void RFIDDriver::init() {
-    nfc = new Adafruit_PN532(PN532_IRQ, PN532_RESET);
+    // Wire.begin(17, 18) is called in main.cpp setup() before rfid.init().
+    nfc = new Adafruit_PN532(PN532_IRQ, PN532_RESET, &Wire);
     nfc->begin();
+
+    uint32_t versiondata = nfc->getFirmwareVersion();
+    if (!versiondata) {
+        Serial.println("RFID: PN532 not found on I2C (0x24) — check cable and DIP switches");
+    } else {
+        Serial.printf("RFID: PN532 found — IC=0x%02X ver=%u.%u\n",
+                      (versiondata >> 24) & 0xFF,
+                      (versiondata >> 16) & 0xFF,
+                      (versiondata >>  8) & 0xFF);
+        nfc->SAMConfig();
+    }
 }
 
 uint32_t RFIDDriver::getFirmwareVersion() {

@@ -7,30 +7,33 @@
  * Buzzer respects config.data.beep_enabled; LEDs are always active.
  * All patterns are non-blocking — update() must be called from loop().
  *
- * Default pin assignments (dev board Option B):
- *   Buzzer: GPIO 46 (or CH422G OC0 if wired)
- *   Green LED: GPIO 15 (RS-485 TX, safe when terminal disconnected)
- *   Red LED: GPIO 16 (RS-485 RX, safe when terminal disconnected)
- *
- * Change FEEDBACK_PIN_* defines to match your wiring.
+ * MaTouch pin assignments (from board_pins.h):
+ *   V1.3 — Buzzer: GPIO19 (Mabee GPIO1), Green LED: GPIO20 (Mabee GPIO2)
+ *   V2.0 — GPIO19/20 are I2S; feedback hardware needs external wiring.
+ *           Set FEEDBACK_HARDWARE_ENABLED=0 if no buzzer/LEDs connected on V2.0.
  */
 
 #include <Arduino.h>
+#include "board_pins.h"
 
-// Pin assignments — change to match your wiring
+// Pin assignments — sourced from board_pins.h; override here if wired differently
 #ifndef FEEDBACK_PIN_BUZZER
-#define FEEDBACK_PIN_BUZZER  46   // GPIO for active buzzer (HIGH = on)
+#define FEEDBACK_PIN_BUZZER    PIN_BUZZER     // GPIO19 (V1.3), -1 (V2.0)
 #endif
 #ifndef FEEDBACK_PIN_LED_GREEN
-#define FEEDBACK_PIN_LED_GREEN 15  // GPIO for green LED
+#define FEEDBACK_PIN_LED_GREEN PIN_LED_GREEN  // GPIO20 (V1.3), -1 (V2.0)
 #endif
 #ifndef FEEDBACK_PIN_LED_RED
-#define FEEDBACK_PIN_LED_RED   16  // GPIO for red LED
+#define FEEDBACK_PIN_LED_RED   PIN_LED_RED    // -1 (unassigned)
 #endif
 
 // Set to 0 to disable feedback hardware entirely (software-only build)
 #ifndef FEEDBACK_HARDWARE_ENABLED
+#if defined(BOARD_MATOUCH_V2)
+#define FEEDBACK_HARDWARE_ENABLED 0   // V2.0: GPIO19/20 are I2S — disable by default
+#else
 #define FEEDBACK_HARDWARE_ENABLED 1
+#endif
 #endif
 
 class Feedback {

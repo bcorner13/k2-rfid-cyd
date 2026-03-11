@@ -1,0 +1,402 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8"/>
+	<meta name="description" content="Screen_touch_coordinates_calibration"/>
+	<meta name="google-site-verification" content="aD-Chs6AG5KcmmoLEiFNjV60ZamHICXAM0qTb20ZWtA"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      
+      
+      
+        <link rel="canonical" href="https://wiki.makerfabs.com/Screen_touch_coordinates_calibration.html"/>
+      
+      
+        <link rel="prev" href="Quick%20Guidance%20for%20AgroSense%20%26%20Gateway%20Setting%20for%20Cloud%20Service.html"/>
+      
+      
+        <link rel="next" href="Use%20LVGL%20on%20Matouch%20screens%20more%20easily.html"/>
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png"/>
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.4"/>
+    
+    
+      
+        <title>Screen touch coordinates calibration tutorial - Makerfabs Wiki</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.8608ea7d.min.css"/>
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""/>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback"/>
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off"/>
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off"/>
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#screen-touch-coordinates-calibration-tutorial" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://www.makerfabs.com" target="_blank" title="Makerfabs Shop" class="md-header__button md-logo" aria-label="Makerfabs Wiki" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Makerfabs Wiki
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Screen touch coordinates calibration tutorial
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required=""/>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0"><ul class="md-nav__list"><li class="md-nav__item"><a href="https://wiki.makerfabs.com" class="md-nav__link"><span class="md-ellipsis">Home</span></a></li><li class="md-nav__item"><a href="Guidance.html" class="md-nav__link"><span class="md-ellipsis">Guidance</span></a></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3"/><label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0"><span class="md-ellipsis">ESP Wireless</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="4G%20LTE%20Air%20Monitor.html" class="md-nav__link"><span class="md-ellipsis">4G LTE Air Monitor</span></a></li><li class="md-nav__item"><a href="ESP32S3%204G%20LTE%20CAT1%20SIM7670G.html" class="md-nav__link"><span class="md-ellipsis">ESP32S3 4G LTE CAT1 SIM7670G</span></a></li><li class="md-nav__item"><a href="ESP32_S3_4G_LTE_CAT1.html" class="md-nav__link"><span class="md-ellipsis">ESP32 S3 4G LTE CAT1 A7670X</span></a></li><li class="md-nav__item"><a href="NBIOT_LTE-M%20Air%20Monitor.html" class="md-nav__link"><span class="md-ellipsis">NBIOT/LTE-M Air Monitor</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6"/><label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0"><span class="md-ellipsis">LoRa &amp; LoRaWAN</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6-1"/><label class="md-nav__link" for="__nav_6-1" id="__nav_6-1_label" tabindex="0"><span class="md-ellipsis">LoRaWAN</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_6-1_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="AgroSense_LoRaWAN%C2%AE_Sensor_Instruction_Manual.html" class="md-nav__link"><span class="md-ellipsis">AgroSense LoRaWAN® Sensor Instruction Manual</span></a></li><li class="md-nav__item"><a href="LoRaWAN_Temperature_Humidity_Soil_Moisture_Sensor.html" class="md-nav__link"><span class="md-ellipsis">LoRaWAN Temperature/ Humidity Soil Moisture Sensor</span></a></li><li class="md-nav__item"><a href="SenseCAP%20M2%20Multi-Platform%20LoRaWAN%20Indoor%20Gateway.html" class="md-nav__link"><span class="md-ellipsis">SenseCAP M2 Multi-Platform LoRaWAN Indoor Gateway</span></a></li><li class="md-nav__item"><a href="How_to_use_LoraWan_Soil_Moisture_Sensor.html" class="md-nav__link"><span class="md-ellipsis">LoRaWAN® Soil Moisture Sensor Instruction Manual</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6-2"/><label class="md-nav__link" for="__nav_6-2" id="__nav_6-2_label" tabindex="0"><span class="md-ellipsis">SenseLoRa</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_6-2_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="Industrial_grade_Soil%20_Remote_Monitor_V2.html" class="md-nav__link"><span class="md-ellipsis">Industrial-grade Soil Remote Monitor V2(Humidity/ Temperature/ PH)</span></a></li><li class="md-nav__item"><a href="SenseLora_4G_gateway.html" class="md-nav__link"><span class="md-ellipsis">SenseLora 4G gateway</span></a></li><li class="md-nav__item"><a href="SenseLora_Soil_Moisture.html" class="md-nav__link"><span class="md-ellipsis">SenseLora Soil Moisture</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6-0"/><label class="md-nav__link" for="__nav_6-0" id="__nav_6-0_label" tabindex="0"><span class="md-ellipsis">LoRa</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_6-0_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="STM32_LR1121.html" class="md-nav__link"><span class="md-ellipsis">Semtech LR1121 LoRa&amp; LoRaWAN Solution with STM32</span></a></li></ul></nav></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8"/><label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0"><span class="md-ellipsis">Sensor</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="ESPWatch.html" class="md-nav__link"><span class="md-ellipsis">ESPWatch</span></a></li><li class="md-nav__item"><a href="Industrial-grade_Soil_Remote_Monitor.html" class="md-nav__link"><span class="md-ellipsis">Industrial-grade Soil Remote Monitor(Humidity/ Temperature/ PH/ Nitrogen/ Phosphorus/ Potassium)</span></a></li><li class="md-nav__item"><a href="Wind_Weather_Station.html" class="md-nav__link"><span class="md-ellipsis">Wind Weather Station</span></a></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8-3"/><label class="md-nav__link" for="__nav_8-3" id="__nav_8-3_label" tabindex="0"><span class="md-ellipsis">Environment</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_8-3_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="Anemometer.html" class="md-nav__link"><span class="md-ellipsis">Anemometer</span></a></li></ul></nav></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10"/><label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0"><span class="md-ellipsis">UWB</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="%20MaUWB_DW3000-with-STM32-AT-Command.html" class="md-nav__link"><span class="md-ellipsis">MaUWB_DW3000 with STM32 AT Command</span></a></li><li class="md-nav__item"><a href="ESP32_DW3000_UWB.html" class="md-nav__link"><span class="md-ellipsis">ESP32 UWB DW3000</span></a></li><li class="md-nav__item"><a href="ESP32_UWB.html" class="md-nav__link"><span class="md-ellipsis">ESP32 UWB/UWB Pro</span></a></li><li class="md-nav__item"><a href="ESP32_UWB_Pro_with_Display.html" class="md-nav__link"><span class="md-ellipsis">ESP32 UWB Pro with Display</span></a></li><li class="md-nav__item"><a href="MaUWB_ESP32S3%20UWB%20module.html" class="md-nav__link"><span class="md-ellipsis">MaUWB_DW3000 with ESP32S3 AT Command</span></a></li><li class="md-nav__item"><a href="UWB%20positioning%20development%20with%20python.html" class="md-nav__link"><span class="md-ellipsis">UWB positioning development with python(MaUWB_ESP32S3 UWB module)</span></a></li><li class="md-nav__item"><a href="based_uasge_of_UWB_positioning.html" class="md-nav__link"><span class="md-ellipsis">UWB positioning development with python</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7"/><label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0"><span class="md-ellipsis">Maboards</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7-0"/><label class="md-nav__link" for="__nav_7-0" id="__nav_7-0_label" tabindex="0"><span class="md-ellipsis">MaDuino</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_7-0_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="Maduino%20Zero%20NB_IoT.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero NB-IoT SIM7080G</span></a></li><li class="md-nav__item"><a href="Maduino%20Zero%20WiFi%20Halow.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero WiFi Halow</span></a></li><li class="md-nav__item"><a href="Maduino_LoRa_Radio.html" class="md-nav__link"><span class="md-ellipsis">Maduino LoRa Radio</span></a></li><li class="md-nav__item"><a href="Maduino_Power_Line_Communication.html" class="md-nav__link"><span class="md-ellipsis">Maduino Power-Line Communication</span></a></li><li class="md-nav__item"><a href="Maduino_SIM808_GPS_Tracker.html" class="md-nav__link"><span class="md-ellipsis">Maduino SIM808 GPS Tracker</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_4G_LTE.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero 4G LTE</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_4G_LTE_CAT1_A7670.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero 4G LTE(CAT1 A7670)</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_A9G.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero A9G</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_Bluetooth_4.0_HM-13.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero Bluetooth 4.0 HM-13</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_Canbus_with_RS485.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero Canbus with RS485</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_LoRaWAN_Node.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero LoRaWAN Node(2.0)</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_NFC.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero NFC</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_SIM800C.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero SIM800C</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_SIM808_GPS_Tracker.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero SIM808 GPS Tracker</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_SIM868_GPS_Tracker.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero SIM868 GPS Tracker</span></a></li><li class="md-nav__item"><a href="Maduino_Zero_WIFI_ESP8266.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero WIFI ESP8266</span></a></li><li class="md-nav__item"><a href="Maduino_Zreo_Ethernet.html" class="md-nav__link"><span class="md-ellipsis">Maduino Zero Ethernet</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7-1"/><label class="md-nav__link" for="__nav_7-1" id="__nav_7-1_label" tabindex="0"><span class="md-ellipsis">MaESP</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_7-1_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="MaESP_A9G.html" class="md-nav__link"><span class="md-ellipsis">MaESP A9G</span></a></li><li class="md-nav__item"><a href="MaESP_Audio.html" class="md-nav__link"><span class="md-ellipsis">MaESP Audio</span></a></li><li class="md-nav__item"><a href="MaESP_ESP32.html" class="md-nav__link"><span class="md-ellipsis">MaESP ESP32 OLED</span></a></li><li class="md-nav__item"><a href="MaESP_ESP32_C3_OLED.html" class="md-nav__link"><span class="md-ellipsis">MaESP ESP32-C3 OLED</span></a></li><li class="md-nav__item"><a href="MaESP_ESP32_Color_LCD.html" class="md-nav__link"><span class="md-ellipsis">MaESP ESP32 Color LCD</span></a></li><li class="md-nav__item"><a href="MaESP_ESP32_Lora_Gateway.html" class="md-nav__link"><span class="md-ellipsis">MaESP ESP32 Lora Gateway</span></a></li><li class="md-nav__item"><a href="MaESP_ESP8266_OLED.html" class="md-nav__link"><span class="md-ellipsis">MaESP ESP8266 OLED</span></a></li><li class="md-nav__item"><a href="MaESP_nRF52840.html" class="md-nav__link"><span class="md-ellipsis">MaESP nRF52840</span></a></li><li class="md-nav__item"><a href="Voice_Interaction_Hat_for_MaESP_ESP32.html" class="md-nav__link"><span class="md-ellipsis">Voice Interaction Hat for MaESP ESP32</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7-2"/><label class="md-nav__link" for="__nav_7-2" id="__nav_7-2_label" tabindex="0"><span class="md-ellipsis">MaLora</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_7-2_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="4_Channel_Lora_Relay_10A.html" class="md-nav__link"><span class="md-ellipsis">4-Channel Lora Relay-10A</span></a></li><li class="md-nav__item"><a href="Lora_AC_Dimmer.html" class="md-nav__link"><span class="md-ellipsis">Lora AC Dimmer</span></a></li><li class="md-nav__item"><a href="Lora_Relay.html" class="md-nav__link"><span class="md-ellipsis">Lora_Relay</span></a></li><li class="md-nav__item"><a href="Lora_Soil_Moisture_Sensor_V3.html" class="md-nav__link"><span class="md-ellipsis">Lora Soil Moisture Sensor V3</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7-3"/><label class="md-nav__link" for="__nav_7-3" id="__nav_7-3_label" tabindex="0"><span class="md-ellipsis">MaPIE</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_7-3_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="MaPIE_LoRa_RP2040.html" class="md-nav__link"><span class="md-ellipsis">MaPIE LoRa RP2040</span></a></li><li class="md-nav__item"><a href="MaPIE_RP2040_0.96_OLED.html" class="md-nav__link"><span class="md-ellipsis">MaPIE RP2040 0.96&#34; OLED</span></a></li><li class="md-nav__item"><a href="PICO_Servo_Driver.html" class="md-nav__link"><span class="md-ellipsis">PICO Servo Driver</span></a></li><li class="md-nav__item"><a href="Pico_W_Primer_Kit.html" class="md-nav__link"><span class="md-ellipsis">Pico W Primer Kit</span></a></li><li class="md-nav__item"><a href="Voice_Interraction_Hat.html" class="md-nav__link"><span class="md-ellipsis">Voice Interaction Hat</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7-4"/><label class="md-nav__link" for="__nav_7-4" id="__nav_7-4_label" tabindex="0"><span class="md-ellipsis">MaTouch</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_7-4_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="Matouch%201.28%20DevKit.html" class="md-nav__link"><span class="md-ellipsis">Matouch 1.28 ToolSets</span></a></li><li class="md-nav__item"><a href="MaTouch_S3_Round_SPI_1.28_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32-S3 Round SPI 1.28&#34; TFT with Touch</span></a></li><li class="md-nav__item"><a href="MaTouch_ESP32_S3_Rotary_IPS_Display_1.28_GC9A01.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32 S3 Rotary IPS Display 1.28 GC9A01</span></a></li><li class="md-nav__item"><a href="MaTouch_ESP32_S3_AMOLED_with_Touch_1.8_FT3168.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32-S3 AMOLED with Touch 1.8&#39;&#39; FT3168</span></a></li><li class="md-nav__item"><a href="MaTouch%20ESP32-S3%20AMOLED%20with%20Touch%201.8%27%27%20CHSC6417.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32-S3 AMOLED with Touch 1.8&#39;&#39; CHSC6417</span></a></li><li class="md-nav__item"><a href="MaTouch_1.9_inch_TFT_Breakout.html" class="md-nav__link"><span class="md-ellipsis">MaTouch_1.9_inch_TFT_Breakout</span></a></li><li class="md-nav__item"><a href="MaTouch_S3_Parallel_1.9_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32-S3 Parallel 1.9&#34; TFT with Touch</span></a></li><li class="md-nav__item"><a href="MaTouch_ESP32_S3_2.1_Rotary_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32 S3 2.1 Rotary TFT with Touch</span></a></li><li class="md-nav__item"><a href="ESP_S3_SPI_TFT_with_Touch_2.8inch.html" class="md-nav__link"><span class="md-ellipsis">ESP_S3_SPI_TFT_with_Touch_2.8inch</span></a></li><li class="md-nav__item"><a href="MaTouch_S3_Parallel_2.8_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32_S3_Parallel_2.8_TFT_with_Touch</span></a></li><li class="md-nav__item"><a href="MaTouch_ESP32S3-SPI-TFT-with-AI-2.8-ST7789V.html" class="md-nav__link"><span class="md-ellipsis">MaTouch_ESP32S3-SPI-TFT-with-AI-2.8-ST7789V</span></a></li><li class="md-nav__item"><a href="ESP32-S3_Parallel_TFT_3.16_ST7701S.html" class="md-nav__link"><span class="md-ellipsis">ESP32-S3_Parallel_TFT_3.16_ST7701S</span></a></li><li class="md-nav__item"><a href="MaTouch_3.2_TFT_LCD_with_Camera.html" class="md-nav__link"><span class="md-ellipsis">ESP32 3.2&#34; TFT LCD with Camera</span></a></li><li class="md-nav__item"><a href="MaTouch_S3_SPI_3.5_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32-S3 SPI 3.5&#34; TFT with Touch</span></a></li><li class="md-nav__item"><a href="MaTouch_3.5_TFT_Touch_with_Camera.html" class="md-nav__link"><span class="md-ellipsis">ESP32 3.5&#34; TFT Touch with Camera</span></a></li><li class="md-nav__item"><a href="MaTouch_C3_SPI_3.5_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32-C3 SPI 3.5&#34; TFT with Touch</span></a></li><li class="md-nav__item"><a href="ESP32_S3_Parallel_3.5_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">MaTouch_ESP32-S3 Parallel TFT with Touch 3.5&#39;&#39; ILI9488</span></a></li><li class="md-nav__item"><a href="MaTouch_S3_Parallel_4.0_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32-S3 Parallel 4.0&#34; TFT with Touch</span></a></li><li class="md-nav__item"><a href="MaTouch%20ESP32-S3%204.2%20Triple-Color%20E-Ink.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32-S3 4.2 Triple-Color E-Ink</span></a></li><li class="md-nav__item"><a href="MaTouch_S3_Parallel_4.3_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">ESP32-S3 Parallel 4.3&#34; TFT with Touch</span></a></li><li class="md-nav__item"><a href="Matouch_ESP32-S3_Parallel%20_TFT_with_Touch_5%27%27.html" class="md-nav__link"><span class="md-ellipsis">Matouch ESP32-S3 Parallel TFT with Touch 5&#34;</span></a></li><li class="md-nav__item"><a href="MaTouch%20ESP32-P4%20TFT%20with%20Touch%207%22.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32-P4 TFT with Touch 7&#34;</span></a></li><li class="md-nav__item"><a href="MaTouch_ESP32_S3_7_Paralle_%20TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">MaTouch ESP32-S3 7” Parallel TFT with Touch</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7-5"/><label class="md-nav__link" for="__nav_7-5" id="__nav_7-5_label" tabindex="0"><span class="md-ellipsis">Mabee</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="2" aria-labelledby="__nav_7-5_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="Mabee_CO2.html" class="md-nav__link"><span class="md-ellipsis">Mabee_CO2</span></a></li><li class="md-nav__item"><a href="Mabee_Soil_Moisture.html" class="md-nav__link"><span class="md-ellipsis">Mabee Soil Moisture</span></a></li></ul></nav></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2"/><label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0"><span class="md-ellipsis">Cooperator</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="Sunton_ESP32_2.8_inch_240x320_TFT_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">Sunton ESP32 2.8 inch 240*320 TFT with Touch</span></a></li><li class="md-nav__item"><a href="Sunton_ESP32_S3_4.3_inch_800x400_IPS_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">Sunton ESP32-S3 4.3 inch 800*400 IPS with Touch</span></a></li><li class="md-nav__item"><a href="Sunton_ESP32_S3_5_7_inch_IPS_with_Touch.html" class="md-nav__link"><span class="md-ellipsis">Sunton ESP32-S3 5/7 inch IPS/TN with Touch</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5"/><label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0"><span class="md-ellipsis">Home Assistant &amp; ESP Home</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="How-to-use-Home-Assistant-Relay-8-Channel.html" class="md-nav__link"><span class="md-ellipsis">How to use Home Assistant Relay 8 Channel</span></a></li><li class="md-nav__item"><a href="How_to_8_Channel_button_controller_for_Home_Assistant.html" class="md-nav__link"><span class="md-ellipsis">How to use 8 Channel button controller for Home Assistant</span></a></li><li class="md-nav__item"><a href="How_to_use_AC_Dimmer_for_Home_Assistant.html" class="md-nav__link"><span class="md-ellipsis">How to use AC Dimmer for Home Assistant</span></a></li><li class="md-nav__item"><a href="How_to_use_DC_Motor_for_Home_Assistant_GA36Y555.html" class="md-nav__link"><span class="md-ellipsis">How to use DC Motor for Home Assistant GA36Y555</span></a></li><li class="md-nav__item"><a href="How%20to%20use%20Energy%20Meter%20for%20Home%20Assistant.html" class="md-nav__link"><span class="md-ellipsis">How to use Energy Meter for Home Assistant</span></a></li><li class="md-nav__item"><a href="How%20to%20use%20Air%20Monitor%20for%20Home%20Assistant.html" class="md-nav__link"><span class="md-ellipsis">How to use Air Monitor for Home Assistant</span></a></li><li class="md-nav__item"><a href="How%20to%20use%20Radar%20for%20Home%20Assistant.html" class="md-nav__link"><span class="md-ellipsis">How to use Radar for Home Assistant</span></a></li><li class="md-nav__item"><a href="How%20to%20use%20OV3660%203M%20Camera%20for%20Home%20Assistant.html" class="md-nav__link"><span class="md-ellipsis">How to use Camera for Home Assistant</span></a></li><li class="md-nav__item"><a href="Weather_Station_for_Home_Assistant_ESPHome.html" class="md-nav__link"><span class="md-ellipsis">Weather Station for Home Assistant/ ESPHome</span></a></li></ul></nav></li><li class="md-nav__item md-nav__item--nested"><input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9"/><label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0"><span class="md-ellipsis">Shield</span><span class="md-nav__icon md-icon"></span></label><nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false"><ul class="md-nav__list"><li class="md-nav__item"><a href="ESP8266_WiFi_Shield.html" class="md-nav__link"><span class="md-ellipsis">ESP8266 WIFI Shield</span></a></li><li class="md-nav__item"><a href="GPRS_GSM_GPS_Shield.html" class="md-nav__link"><span class="md-ellipsis">GPRS GSM GPS Shield (SIMCOM- SIM808)</span></a></li><li class="md-nav__item"><a href="GPS_Shield.html" class="md-nav__link"><span class="md-ellipsis">GPS Shield</span></a></li><li class="md-nav__item"><a href="H_Bridge_Motor_Shield.html" class="md-nav__link"><span class="md-ellipsis">H-Bridge Motor Shield</span></a></li><li class="md-nav__item"><a href="LoRa_Radio_Shield.html" class="md-nav__link"><span class="md-ellipsis">LoRa Radio Shield</span></a></li></ul></nav></li></ul></nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#foreword" class="md-nav__link">
+    <span class="md-ellipsis">
+      Foreword
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rationale" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rationale
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calibration-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Calibration preparation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calibration-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      Calibration method
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Calibration method">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-problem-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      The problem 1
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-problem-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      The problem 2
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-problem-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      The problem 3
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="screen-touch-coordinates-calibration-tutorial">Screen touch coordinates calibration tutorial</h1>
+<p>Author: Vincent
+Time: 2023/12/9</p>
+<h2 id="foreword">Foreword</h2>
+<p>For devices with touch screens, we would want the coordinates displayed on the screen to match the coordinates of the touch, however, the same size display may have a different resolution, and the same size or driven touch screen has a different output, and because the display and touchscreen are mounted together later, so it maybe have some problems like their coordinates are mirror or opposite.</p>
+<p>Furthermore, due to different production processes, the output of different batches of touchscreens is not guaranteed to be consistent, even though they have the same size and driver.And our example code and test code are not guaranteed to match all screens. Even some touch screens have different initialisation codes, which requires the user to do the matching on their own. </p>
+<p>If you get a screen and the touch effect doesn&#39;t match what is expected, then you need to modify the software. Besides, if the software changed the rotation direction of the display, it also needs to be modified.</p>
+<p>Note this is not a hardware issue.</p>
+<h2 id="rationale">Rationale</h2>
+<p>Both displays and touchscreens use a right-angle coordinate system, also called a Cartesian coordinate system.</p>
+<p>Generally, the upper left corner is the coordinate origin, to the right is the positive direction of the x-axis, and like down is the positive direction of the y-axis.</p>
+<p><img alt="image.png" src="https://www.makerfabs.com/image/wiki_image/2023-12-11_18_37_13_0.png"/></p>
+<p>That means, we need to make sure that the 0X and 0Y values of the screen coordinates are the same as the touch coordinates 0X&#39; and 0Y&#39;.</p>
+<p>And in practice, we will encounter the following problems:</p>
+<p><strong>(1) The 0X&#39; and 0X ranges are inconsistent.</strong></p>
+<p>Such as 0X = a0X&#39;+b, the two coordinate systems are not the same size.</p>
+<p><strong>(2) 0X&#39; and 0X directions are reversed.</strong></p>
+<p>Such as 0X = WIDTH - 0X&#39;, the two coordinate systems produce a mirror image.</p>
+<p><strong>(3) 0Y&#39; output direction is consistent with 0X instead of 0Y.</strong></p>
+<p>Such as 0X = 0Y&#39;, the two coordinate systems produce a rotation.</p>
+<p>All display and touch mismatch problems are caused by a combination of the above three problems.</p>
+<h2 id="calibration-preparation">Calibration preparation</h2>
+<p>First of all, please make sure the output of the screen and the output of the touch screen work normally.</p>
+<p>Before calibration, please determine the resolution of the screen, which the screen WIDTH and HIGHTH. For example, seven-inch screen has two specifications 1024 * 600 and 800 * 480, we need to determine which one it is.</p>
+<p>Please determine the output mode of the touch screen, different driver libraries will have different data output:</p>
+<ul>
+<li>Some will output 0~4095 AD value.</li>
+<li>Some will output the calculated X and Y values of coordinates according to the resolution you input.</li>
+<li>Some libraries will directly default the screen to 320*240, and output the data according to this resolution</li>
+</ul>
+<p>Anyway, there will always end up being a function, like get_touch(), it can output the X and Y values of the coordinates of the press point. Then the display driver will always provide a function, like draw_pixel(), it can draw a point.</p>
+<p>In this way, we can take the location of our touch, draw it on the screen, and then we can detect which of the problems it is.</p>
+<p>To illustrate this accurately, we set the four corners of the screen as a,b,c,d respectively. And the coordinates are:</p>
+<p><strong>a(0,0)</strong></p>
+<p><strong>b(WIDTH,0)</strong></p>
+<p><strong>c(0,HEIGHT)</strong></p>
+<p><strong>d(WIDTH,HEIGHT)</strong></p>
+<p><img alt="image.png" src="https://www.makerfabs.com/image/wiki_image/2023-12-11_18_42_17_0.png"/></p>
+<h2 id="calibration-method">Calibration method</h2>
+<h3 id="the-problem-1">The problem 1</h3>
+<p>The 0X&#39; and 0X ranges are inconsistent:
+When the finger touches point a and slides to point b, the X value output by get_touch() is larger or less than the actual distance, but it does increment in the right direction.</p>
+<p>For this kind of problem, the Arduino provides a function, map(), for converting a number from its original range, to another range of values.</p>
+<p>We can place our finger on point a to get the (Xa,Ya) returned by get_touch(), and then get the (Xb,Yb) for point b.</p>
+<p>So the conversion formula is as follows:</p>
+<p><strong>X_out = map(X,Xa,Xb,0,WIDTH).</strong></p>
+<p>Similarly, 0Y&#39; and 0Y range inconsistencies are calibrated in this way:</p>
+<p><strong>Y_out = map(Y,Ya,Yb,0,HEIGHT).</strong></p>
+<h3 id="the-problem-2">The problem 2</h3>
+<p>The 0X&#39; and 0X directions are reversed:
+When the finger touches point a and slides to point b, the X value output by get_touch() is from large to small.</p>
+<p>So the conversion formula is as follows:</p>
+<p><strong>X_out = WIDTH - X.</strong></p>
+<p>Similarly for the y direction:</p>
+<p><strong>Y_out = HEIGHT - Y.</strong></p>
+<h3 id="the-problem-3">The problem 3</h3>
+<p>The 0Y&#39; output direction is the same as 0X instead of 0Y.
+When the finger is sliding in the ab direction, which is also the x direction, the get_touch() output has no change in X but a change in Y. This often occurs when the screen was rotated but the touch coordinates have not been rotated.</p>
+<p>So the conversion formula is as follows:</p>
+<p><strong>X_out = Y;</strong></p>
+<p><strong>Y_out = X.</strong></p>
+<p>Of course, this is often accompanied by problems with mirroring and inconsistent range, which can be solved according to 1, 2.</p>
+<p>The above three methods can solve all the problem which about the touch coordinates and display coordinates do not match.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+    
+  
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v67327c56f0bb4ef8b305cae61679db8f1769101564043" integrity="sha512-rdcWY47ByXd76cbCFzznIcEaCN71jqkWBBqlwhF1SY7KubdLKZiEGeP7AyieKZlGP9hbY/MhGrwXzJC/HulNyg==" data-cf-beacon='{"version":"2024.11.0","token":"6a14cd83fd2e449aae279f0a989da036","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body></html>

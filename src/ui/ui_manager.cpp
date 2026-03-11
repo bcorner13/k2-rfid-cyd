@@ -1,3 +1,4 @@
+#include <esp_task_wdt.h>
 #include <ui/ui_manager.h>
 #include <ui/color_palette.h>
 #include <filament_db.h>
@@ -16,6 +17,7 @@
 #include <ui/screens/screen_inventory.h>
 #include <ui/screens/screen_spool_detail.h>
 #include <ui/screens/screen_custom_entry.h>
+#include <ui/screens/screen_wifi.h>
 
 UIManager ui;
 
@@ -36,13 +38,18 @@ void UIManager::init() {
         ); // Replaced lv_palette_main with lv_color_make
     lv_display_set_theme(disp, theme);
 
+    // Disable watchdog during UI init — creating screens with many LVGL
+    // objects can exceed the default WDT timeout.
+    esp_task_wdt_delete(NULL);
+
     screenMain.init();
     screenLibrary.init();
     screenSettings.init();
     screenAbout.init();
     screenInventory.init();
-    screenSpoolDetail.init();
-    screenCustomEntry.init();
+    screenSpoolDetail.init();   // deferred — actual creation on first show()
+    screenCustomEntry.init();   // deferred — actual creation on first show()
+    screenWifi.init();
 
     // Register event handlers once (not on every screen transition)
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
@@ -56,31 +63,19 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenSettings.btnAbout, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.swBeep, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(screenSettings.btnUpdateDB, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSettings.btnSetupWifi, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnResetWifi, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnRestart, event_handler, LV_EVENT_CLICKED, NULL);
 
     lv_obj_add_event_cb(screenAbout.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-
     lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-
     lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnAddCustom, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenWifi.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_add_event_cb(screenCustomEntry.btnCancel, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnPrev, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnNext, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnSave, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenCustomEntry.btnSaveWrite, event_handler, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnWriteTag, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnUnlinkTag, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnArchive, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnDelete, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnWeightOk, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenSpoolDetail.btnWeightCancel, event_handler, LV_EVENT_CLICKED, NULL);
+    // Spool detail + custom entry event handlers registered lazily in
+    // showSpoolDetail() / showCustomEntry() on first navigation.
 
     createColorPicker();
     createOverlay();
@@ -90,6 +85,11 @@ void UIManager::init() {
     updateDashboardFromSpool(defaultSpool);
 
     showMainScreen();
+    updateButtonStates(); // 🟢 Ensure icons are active on boot
+
+    // Re-enable watchdog for normal operation
+    esp_task_wdt_add(NULL);
+    Serial.println("UI init complete");
 }
 
 void UIManager::update() {
@@ -125,6 +125,7 @@ void UIManager::updateButtonStates() {
 
     // Settings screen: operation buttons disabled when busy
     setEnabled(screenSettings.btnUpdateDB, !busy);
+    setEnabled(screenSettings.btnSetupWifi, !busy);
     setEnabled(screenSettings.btnResetWifi, !busy);
     setEnabled(screenSettings.btnRestart, !busy);
     // Back, About, Beep toggle always active
@@ -133,12 +134,14 @@ void UIManager::updateButtonStates() {
     setEnabled(screenInventory.btnScanTag, !busy);
     setEnabled(screenInventory.btnAddCustom, !busy);
 
-    // Spool detail: action buttons disabled when busy, Back always active
-    setEnabled(screenSpoolDetail.btnUpdateWeight, !busy);
-    setEnabled(screenSpoolDetail.btnWriteTag, !busy);
-    setEnabled(screenSpoolDetail.btnUnlinkTag, !busy);
-    setEnabled(screenSpoolDetail.btnArchive, !busy);
-    setEnabled(screenSpoolDetail.btnDelete, !busy);
+    // Spool detail: action buttons disabled when busy (only if lazily initialized)
+    if (screenSpoolDetail.btnUpdateWeight) {
+        setEnabled(screenSpoolDetail.btnUpdateWeight, !busy);
+        setEnabled(screenSpoolDetail.btnWriteTag, !busy);
+        setEnabled(screenSpoolDetail.btnUnlinkTag, !busy);
+        setEnabled(screenSpoolDetail.btnArchive, !busy);
+        setEnabled(screenSpoolDetail.btnDelete, !busy);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +161,14 @@ void UIManager::event_handler(lv_event_t* e) {
         if (obj == ui.screenInventory.btnBack) { ui.showMainScreen(); return; }
         if (obj == ui.screenSpoolDetail.btnBack) { ui.showInventoryScreen(); return; }
         if (obj == ui.screenCustomEntry.btnCancel) { ui.showInventoryScreen(); return; }
+        if (obj == ui.screenWifi.btnBack) {
+            // Re-enable watchdog when leaving setup
+            esp_task_wdt_add(NULL);
+            
+            sysState.handleEvent(SystemEvent::USER_DISMISS);
+            ui.showSettingsScreen();
+            return;
+        }
 
         // P1.9: Gate all operation-triggering actions when system is busy
         if (isSystemBusy()) {
@@ -166,38 +177,44 @@ void UIManager::event_handler(lv_event_t* e) {
         }
 
         if (obj == ui.screenMain.btnReadRfid) {
+            Serial.println("UI: Read RFID triggered");
             sysState.handleEvent(SystemEvent::READ_REQUEST);
             ui.screenMain.setWriteStatus("Reading...");
             ui.updateButtonStates();
 
             SpoolData readSpool;
             if (rfid.readCFSTag(readSpool)) {
+                Serial.println("UI: Read RFID Success");
                 ui.updateDashboardFromSpool(readSpool);
                 ui.screenMain.setWriteStatus("Read OK", true, false);
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
                 feedback.readSuccess();
             } else {
+                Serial.println("UI: Read RFID Failed (No Tag)");
                 ui.screenMain.setWriteStatus("No tag / Read failed", false, false);
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
                 feedback.operationFailed();
             }
-            ui.updateButtonStates();
+            ui.updateButtonStates(); // 🟢 Crucial: Refresh buttons after op finished
         }
         else if (obj == ui.screenMain.btnWrite) {
+            Serial.println("UI: Write RFID triggered");
             sysState.handleEvent(SystemEvent::WRITE_REQUEST);
             ui.screenMain.setWriteStatus("Writing...");
             ui.updateButtonStates();
 
             if (rfid.writeCFSTag(ui.currentSpool)) {
+                Serial.println("UI: Write RFID Success");
                 ui.screenMain.setWriteStatus("Write OK", true, false);
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
                 feedback.writeSuccess();
             } else {
+                Serial.println("UI: Write RFID Failed");
                 ui.screenMain.setWriteStatus("Write failed", false, false);
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
                 feedback.operationFailed();
             }
-            ui.updateButtonStates();
+            ui.updateButtonStates(); // 🟢 Refresh buttons after op finished
         }
         else if (obj == ui.screenMain.btnLibrary) {
             ui.showFilamentLibrary();
@@ -369,8 +386,19 @@ void UIManager::event_handler(lv_event_t* e) {
             }
             ui.updateButtonStates();
         }
-        else if (obj == ui.screenSettings.btnResetWifi) {
+        else if (obj == ui.screenSettings.btnSetupWifi) {
+            sysState.handleEvent(SystemEvent::WIFI_CONFIG_REQUEST);
+            ui.showWifiScreen();
+            
+            // Disable watchdog while portal is active to prevent reboots during config
+            esp_task_wdt_delete(NULL);
+            
             network.startConfigPortal();
+        }
+        else if (obj == ui.screenSettings.btnResetWifi) {
+            lv_label_set_text(lv_obj_get_child(ui.screenSettings.btnResetWifi, 0), "Clearing...");
+            lv_timer_handler(); // Force render
+            network.reset(); // This now clears settings, waits 1s, and restarts the ESP
         }
         else if (obj == ui.screenSettings.btnRestart) {
             ESP.restart();
@@ -437,14 +465,40 @@ void UIManager::showAboutScreen() {
 }
 
 void UIManager::showSpoolDetail(const String& spool_id) {
+    static bool eventsRegistered = false;
     screenSpoolDetail.loadSpool(spool_id);
+    if (!eventsRegistered) {
+        eventsRegistered = true;
+        lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnWriteTag, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnUnlinkTag, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnArchive, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnDelete, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnWeightOk, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenSpoolDetail.btnWeightCancel, event_handler, LV_EVENT_CLICKED, NULL);
+    }
     screenSpoolDetail.show();
     updateButtonStates();
 }
 
 void UIManager::showCustomEntry() {
+    static bool eventsRegistered = false;
     screenCustomEntry.reset();
+    if (!eventsRegistered) {
+        eventsRegistered = true;
+        lv_obj_add_event_cb(screenCustomEntry.btnCancel, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnPrev, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnNext, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnSave, event_handler, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(screenCustomEntry.btnSaveWrite, event_handler, LV_EVENT_CLICKED, NULL);
+    }
     screenCustomEntry.show();
+}
+
+void UIManager::showWifiScreen() {
+    screenWifi.show();
+    updateButtonStates();
 }
 
 void UIManager::showInventoryScreen() {

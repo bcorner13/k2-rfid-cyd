@@ -1,6 +1,8 @@
 # Board Variants: ESP32-S3-Touch-LCD-4.3 (Dev) vs 4.3C (Production)
 
-> **This project targets the 4.3 development board.** This document describes the differences between the two variants and serves as a reference if adapting to the 4.3C.
+> **⚠️ ARCHIVED — Waveshare board retired 2026-03-10.** This project now targets the **Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3"** (SKU: E32S3RGB43). This document is kept as historical reference explaining why the Waveshare platform was abandoned (CH422G / PN532 I2C address collision). See `docs/CHECKPOINT.md` for the full migration record.
+
+> **Original note (historical):** This project targeted the 4.3 development board. This document describes the differences between the two Waveshare variants and serves as a reference if adapting to the 4.3C.
 
 ---
 
