@@ -75,6 +75,10 @@ struct SpoolData {
         _materialBatch = spooldata.substr(9, 2);
         _materialType = trim_copy(spooldata.substr(12, 5));
 
+        // Map known vendor codes to brand names used in the DB / UI brand dropdown.
+        // 0276 = Creality (confirmed). Unknown vendors fall back to "Generic" (index 0).
+        if (_materialVendor == "0276") _brandName = "Creality";
+
         // Creality CFS tags store a numeric material-type code (e.g. "01001")
         // rather than the alphabetic abbreviation used in the DB and UI dropdowns.
         // Map known codes → alphabetic names so the dashboard dropdown matches.
