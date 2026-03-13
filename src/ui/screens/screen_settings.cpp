@@ -68,7 +68,14 @@ void ScreenSettings::init() {
     lv_obj_set_size(btnAbout, 300, 50);
     lv_obj_t* lAbout = lv_label_create(btnAbout);
     lv_label_set_text(lAbout, "About");
-    lv_obj_set_align(lAbout, LV_ALIGN_CENTER); // Changed from lv_obj_center
+    lv_obj_set_align(lAbout, LV_ALIGN_CENTER);
+
+    // RFID Raw Log Button
+    btnRfidRaw = lv_btn_create(cont);
+    lv_obj_set_size(btnRfidRaw, 300, 50);
+    lv_obj_t* lRfidRaw = lv_label_create(btnRfidRaw);
+    lv_label_set_text(lRfidRaw, LV_SYMBOL_WIFI "  RFID Raw Log");
+    lv_obj_set_align(lRfidRaw, LV_ALIGN_CENTER);
 
     // Restart Button
     btnRestart = lv_btn_create(cont);

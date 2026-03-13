@@ -179,12 +179,14 @@ void ScreenMain::init() {
 
     labelWriteStatus = lv_label_create(bottomArea);
     lv_label_set_text(labelWriteStatus, "Ready");
-    lv_obj_set_style_text_font(labelWriteStatus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(labelWriteStatus, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x404040), 0);
+    lv_obj_add_flag(labelWriteStatus, LV_OBJ_FLAG_CLICKABLE);  // tap to dismiss error
 
     lv_obj_t* btnCont = lv_obj_create(bottomArea);
     lv_obj_set_style_bg_opa(btnCont, 0, 0);
     lv_obj_set_style_border_width(btnCont, 0, 0);
+    lv_obj_set_style_pad_all(btnCont, 0, 0);   // clear default 8px LVGL pad; prevents label being clipped
     lv_obj_set_flex_flow(btnCont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btnCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(btnCont, 4, 0);

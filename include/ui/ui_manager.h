@@ -18,6 +18,7 @@
 #include "screens/screen_spool_detail.h"
 #include "screens/screen_custom_entry.h"
 #include "screens/screen_wifi.h"
+#include "screens/screen_rfid_raw.h"
 #include "spool_data.h"
 #include "system_state.h"
 
@@ -35,6 +36,7 @@ public:
     ScreenSpoolDetail screenSpoolDetail;
     ScreenCustomEntry screenCustomEntry;
     ScreenWifi screenWifi;
+    ScreenRfidRaw screenRfidRaw;
 
     SpoolData currentSpool;
 
@@ -48,6 +50,7 @@ public:
     void showSpoolDetail(const String& spool_id);
     void showCustomEntry();
     void showWifiScreen();
+    void showRfidRawScreen();
 
     void updateDashboardFromSpool(const SpoolData& data);
 

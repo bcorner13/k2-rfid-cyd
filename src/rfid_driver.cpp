@@ -21,9 +21,23 @@
 
 RFIDDriver rfid;
 
+// Last CFS tag dump — populated by readCFSTag(), shown as hex log on RFID Raw screen.
+static char s_rawDump[1024] = {};
+
+// Last decoded CFS payload string — 40-char uppercase ASCII (e.g. "5C3250276A210...").
+// Populated only on a successful readCFSTag(); empty if no tag has been read yet.
+static char s_lastPayload[48] = {};
+
+const char* RFIDDriver::getLastRawDump() const { return s_rawDump; }
+const char* RFIDDriver::getLastPayload()  const { return s_lastPayload; }
+
 const uint8_t RFIDDriver::STD_KEY[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-const uint8_t RFIDDriver::U_KEY[16] = {0x43, 0x46, 0x53, 0x76, 0x31, 0x45, 0x4D, 0x55, 0x4C, 0x41, 0x54, 0x4F, 0x52, 0x31, 0x33, 0x37};
-const uint8_t RFIDDriver::D_KEY[16] = {0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37, 0x13, 0x37};
+// AES-128 master key for Key A derivation — from DnG-Crafts/K2-RFID (Utils.cs CreateKey)
+const uint8_t RFIDDriver::U_KEY[16] = {0x71, 0x33, 0x62, 0x75, 0x5E, 0x74, 0x31, 0x6E,
+                                        0x71, 0x66, 0x5A, 0x28, 0x70, 0x66, 0x24, 0x31};
+// AES-128 key for payload block encryption — from DnG-Crafts/K2-RFID (CipherData)
+const uint8_t RFIDDriver::D_KEY[16] = {0x48, 0x40, 0x43, 0x46, 0x6B, 0x52, 0x6E, 0x7A,
+                                        0x40, 0x4B, 0x41, 0x74, 0x42, 0x4A, 0x70, 0x32};
 
 RFIDDriver::RFIDDriver() : nfc(nullptr), currentUidLen(0), keyACached(false) {
     memset(currentUid, 0, sizeof(currentUid));
@@ -77,6 +91,14 @@ uint32_t RFIDDriver::computeCRC32(const uint8_t* data, size_t length) {
 
 // ---------------------------------------------------------------------------
 // Sector authentication helper — caches Key A from UID
+//
+// IMPORTANT: MIFARE Classic protocol behaviour after a failed authentication:
+//   The card transitions to a deselected/halt state. Any subsequent I2C command
+//   to that card (including a second auth attempt) will fail unless the card is
+//   re-selected first via a fresh InListPassiveTarget / readPassiveTargetID call.
+//
+// Strategy: try derived Key A first; if it fails, re-detect the card (which
+// re-selects it), then try standard key (0xFF×6) as a fallback for factory tags.
 // ---------------------------------------------------------------------------
 bool RFIDDriver::authenticateSector(uint8_t sector) {
     if (!nfc) return false;
@@ -84,12 +106,33 @@ bool RFIDDriver::authenticateSector(uint8_t sector) {
     if (!keyACached) {
         generateKeyA(currentUid, cachedKeyA);
         keyACached = true;
+        Serial.printf("Auth: derived key: %02X %02X %02X %02X %02X %02X\n",
+                      cachedKeyA[0], cachedKeyA[1], cachedKeyA[2],
+                      cachedKeyA[3], cachedKeyA[4], cachedKeyA[5]);
     }
 
-    // First block of the sector
     uint8_t firstBlock = sector * BLOCKS_PER_SECTOR;
-    return nfc->mifareclassic_AuthenticateBlock(
-        currentUid, currentUidLen, firstBlock, 0, cachedKeyA);
+
+    // Attempt 1: derived Key A
+    if (nfc->mifareclassic_AuthenticateBlock(currentUid, currentUidLen, firstBlock, 0, cachedKeyA)) {
+        return true;
+    }
+    Serial.printf("Auth: derived key failed sector %u — re-selecting tag\n", sector);
+
+    // After a failed MIFARE auth the card is deselected; re-detect it before retrying.
+    if (!nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, currentUid, &currentUidLen, 200)) {
+        Serial.println("Auth: tag lost after re-select attempt");
+        return false;
+    }
+
+    // Attempt 2: standard key fallback (factory / uninitialized tags)
+    if (nfc->mifareclassic_AuthenticateBlock(currentUid, currentUidLen, firstBlock, 0, (uint8_t*)STD_KEY)) {
+        Serial.printf("Auth: standard key succeeded sector %u\n", sector);
+        return true;
+    }
+
+    Serial.printf("Auth: both keys failed sector %u\n", sector);
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -738,23 +781,148 @@ bool RFIDDriver::writeTag(const TagData& in) {
 }
 
 // ---------------------------------------------------------------------------
-// CFS Tag Read (skeleton — reads block 4 for now)
+// AES-128-ECB block decrypt/encrypt using D_KEY (for CFS payload blocks).
+// ---------------------------------------------------------------------------
+bool RFIDDriver::decryptBlock(const uint8_t* input, uint8_t* output) {
+    mbedtls_aes_context aes;
+    mbedtls_aes_init(&aes);
+    mbedtls_aes_setkey_dec(&aes, D_KEY, 128);
+    int ret = mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, input, output);
+    mbedtls_aes_free(&aes);
+    return (ret == 0);
+}
+
+bool RFIDDriver::encryptBlock(const uint8_t* input, uint8_t* output) {
+    mbedtls_aes_context aes;
+    mbedtls_aes_init(&aes);
+    mbedtls_aes_setkey_enc(&aes, D_KEY, 128);
+    int ret = mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, input, output);
+    mbedtls_aes_free(&aes);
+    return (ret == 0);
+}
+
+// ---------------------------------------------------------------------------
+// CFS Tag Read — reads sector 1 (blocks 4-6), tries raw then D_KEY-decrypted
+// to find the 34-char ASCII CFS payload string, then parses into SpoolData.
+// Hex dump (raw + decrypted) printed to Serial for diagnostics.
 // ---------------------------------------------------------------------------
 bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
     if (!nfc || !checkTagPresent()) return false;
 
-    if (!authenticateSector(SECTOR_FORMAT)) {
-        Serial.println("Auth failed for sector 1");
-        return false;
+    // Read sector 1 data blocks (blocks 4, 5, 6 = 48 bytes).
+    // The CFS payload string starts at block 4 as ASCII (possibly encrypted
+    // with D_KEY on Creality v1 tags).
+    uint8_t rawBuf[DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK];
+    if (readSectorRange(SECTOR_FORMAT, SECTOR_FORMAT, rawBuf) == 0) return false;
+
+    // Decrypt each 16-byte block with D_KEY.
+    uint8_t decBuf[DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK];
+    for (int b = 0; b < (int)DATA_BLOCKS_PER_SECTOR; b++) {
+        const uint8_t* in  = rawBuf + b * BYTES_PER_BLOCK;
+        uint8_t*       out = decBuf + b * BYTES_PER_BLOCK;
+        if (!decryptBlock(in, out)) memcpy(out, in, BYTES_PER_BLOCK);
     }
 
-    uint8_t block_buffer[16];
-    if (!nfc->mifareclassic_ReadDataBlock(4, block_buffer)) {
-        Serial.println("Read failed for block 4");
-        return false;
+    // Build rich hex dump into s_rawDump (for RFID Raw screen) and Serial.
+    char* p = s_rawDump;
+    char* end = s_rawDump + sizeof(s_rawDump) - 1;
+    auto dump_append = [&](const char* line) {
+        size_t rem = end - p;
+        if (rem > 1) { strncpy(p, line, rem); p += strnlen(line, rem); }
+    };
+
+    // UID line
+    char line[128];
+    snprintf(line, sizeof(line), "UID:");
+    for (int i = 0; i < (int)currentUidLen; i++) snprintf(line + strlen(line), sizeof(line) - strlen(line), " %02X", currentUid[i]);
+    strncat(line, "\n", sizeof(line) - strlen(line) - 1);
+    dump_append(line);
+
+    // Per-block hex dump
+    Serial.println("CFS sector 1 (blocks 4-6):");
+    for (int b = 0; b < (int)DATA_BLOCKS_PER_SECTOR; b++) {
+        const uint8_t* r = rawBuf + b * BYTES_PER_BLOCK;
+        const uint8_t* d = decBuf + b * BYTES_PER_BLOCK;
+
+        // Serial output
+        Serial.printf("  B%d raw:", 4 + b);
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) Serial.printf(" %02X", r[i]);
+        Serial.printf("  |");
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) Serial.printf("%c", (r[i] >= 0x20 && r[i] < 0x7F) ? r[i] : '.');
+        Serial.println("|");
+        Serial.printf("  B%d dec:", 4 + b);
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) Serial.printf(" %02X", d[i]);
+        Serial.printf("  |");
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) Serial.printf("%c", (d[i] >= 0x20 && d[i] < 0x7F) ? d[i] : '.');
+        Serial.println("|");
+
+        // Screen dump — raw row
+        snprintf(line, sizeof(line), "B%d raw:", 4 + b);
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) snprintf(line + strlen(line), sizeof(line) - strlen(line), " %02X", r[i]);
+        strncat(line, "\n", sizeof(line) - strlen(line) - 1);
+        dump_append(line);
+
+        // Screen dump — dec row + ASCII
+        snprintf(line, sizeof(line), "B%d dec:", 4 + b);
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) snprintf(line + strlen(line), sizeof(line) - strlen(line), " %02X", d[i]);
+        strncat(line, "\n     |", sizeof(line) - strlen(line) - 1);
+        for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) snprintf(line + strlen(line), sizeof(line) - strlen(line), "%c", (d[i] >= 0x20 && d[i] < 0x7F) ? d[i] : '.');
+        strncat(line, "|\n", sizeof(line) - strlen(line) - 1);
+        dump_append(line);
+    }
+    *p = '\0';
+
+    // Validity check: a real CFS payload is 34 printable-ASCII chars.
+    auto isPlausibleCFS = [](const uint8_t* buf) -> bool {
+        for (int i = 0; i < 34; i++) {
+            if (buf[i] < 0x20 || buf[i] > 0x7E) return false;
+        }
+        return true;
+    };
+
+    // Try raw first, then decrypted (handles both unencrypted and encrypted tags).
+    const uint8_t* bufs[2] = { rawBuf, decBuf };
+    const char*    names[2] = { "raw", "dec" };
+    for (int attempt = 0; attempt < 2; attempt++) {
+        const uint8_t* src = bufs[attempt];
+        if (!isPlausibleCFS(src)) continue;
+
+        char tmp[49];
+        memcpy(tmp, src, 48);
+        tmp[48] = '\0';
+        std::string payload(tmp);
+        SpoolData parsed(payload);
+        if (parsed.getRawData().empty()) continue;
+
+        spoolData = parsed;
+
+        // Cache the decoded payload string for the RFID Raw table screen.
+        const std::string& raw = parsed.getRawData();
+        strncpy(s_lastPayload, raw.c_str(), sizeof(s_lastPayload) - 1);
+        s_lastPayload[sizeof(s_lastPayload) - 1] = '\0';
+
+        // Append parse result to existing hex dump in s_rawDump
+        size_t used = strlen(s_rawDump);
+        snprintf(s_rawDump + used, sizeof(s_rawDump) - used,
+            "\nPAYLOAD(%s):\n%s\ntype=%-5s  wt=%ug  %s",
+            names[attempt],
+            parsed.getRawData().c_str(),
+            parsed.getType().c_str(),
+            parsed.getWeight(),
+            parsed.getColorName().c_str());
+        Serial.printf("CFS OK (%s): [%s] type=%s wt=%ug\n",
+                      names[attempt],
+                      parsed.getRawData().c_str(),
+                      parsed.getType().c_str(),
+                      parsed.getWeight());
+        return true;
     }
 
-    return true;
+    // Neither buffer had a valid CFS payload — append failure note to dump.
+    size_t used = strlen(s_rawDump);
+    snprintf(s_rawDump + used, sizeof(s_rawDump) - used, "\nNo CFS payload found");
+    Serial.println("CFS: no valid CFS payload in raw or decrypted data");
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -767,12 +935,30 @@ bool RFIDDriver::writeCFSTag(const SpoolData& spoolData) {
 }
 
 // ---------------------------------------------------------------------------
-// Key A derivation from UID via AES-128
+// Key A derivation from UID via AES-128-ECB (CFS spec).
+//
+// Two critical correctness requirements:
+//  1. AES input must be exactly 16 bytes: zero-pad the UID (4 bytes for MIFARE
+//     Classic) into a 16-byte block rather than passing the raw UID pointer,
+//     which would cause a 12-byte read overrun into adjacent struct members.
+//  2. AES output is 16 bytes but Key A is only 6: use a 16-byte stack buffer
+//     for the AES result and copy the first 6 bytes to keyOut.  Writing 16
+//     bytes directly to a 6-byte keyOut buffer overwrites keyACached plus
+//     9 bytes past the end of the RFIDDriver object, corrupting whatever
+//     global follows it in BSS (sysState.currentState in practice).
 // ---------------------------------------------------------------------------
 void RFIDDriver::generateKeyA(const uint8_t* uid, uint8_t* keyOut) {
+    // Cycle the 4-byte UID to fill a 16-byte AES input block: uid[i % 4].
+    // Reference: DnG-Crafts/K2-RFID Utils.cs CreateKey() — the UID is NOT zero-padded.
+    uint8_t input[16];
+    for (int i = 0; i < 16; i++) input[i] = uid[i % currentUidLen];
+
+    uint8_t aes_out[16];
     mbedtls_aes_context aes;
     mbedtls_aes_init(&aes);
     mbedtls_aes_setkey_enc(&aes, U_KEY, 128);
-    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, uid, keyOut);
+    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, input, aes_out);
     mbedtls_aes_free(&aes);
+
+    memcpy(keyOut, aes_out, 6);  // Key A = first 6 bytes of AES output
 }

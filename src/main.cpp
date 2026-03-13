@@ -115,12 +115,10 @@ void rfid_task() {
     static uint32_t last_poll = 0;
     static String last_uid = "";
     static uint32_t last_detection_time = 0;
-    
+    static bool last_read_failed = false;  // require tag removal before retry after failure
+
     // Only auto-poll in IDLE state
-    if (sysState.getCurrentState() != SystemState::IDLE) {
-        last_uid = ""; // Reset debounce when leaving IDLE
-        return;
-    }
+    if (sysState.getCurrentState() != SystemState::IDLE) return;
 
     // Poll every 500ms
     if (millis() - last_poll < 500) return;
@@ -128,12 +126,14 @@ void rfid_task() {
 
     if (rfid.checkTagPresent()) {
         String current_uid = rfid.formatUID();
-        
+
+        // After a failed read: require tag removal before retrying the same tag
+        if (last_read_failed && current_uid == last_uid) return;
+
         // Debounce: Only trigger if it's a NEW tag or it's been 3 seconds since last read
         if (current_uid != last_uid || (millis() - last_detection_time > 3000)) {
             Serial.printf("RFID: Auto-detected Tag %s\n", current_uid.c_str());
-            
-            // Enter reading state
+
             sysState.handleEvent(SystemEvent::READ_REQUEST);
             ui.updateButtonStates();
             ui.screenMain.setWriteStatus("Auto-Reading...");
@@ -145,22 +145,25 @@ void rfid_task() {
                 ui.screenMain.setWriteStatus("Tag Read OK", true, false);
                 feedback.readSuccess();
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                last_read_failed = false;
             } else {
                 Serial.println("RFID: Auto-Read failed (Auth/CRC)");
                 ui.screenMain.setWriteStatus("Read failed", false, false);
                 feedback.operationFailed();
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+                last_read_failed = true;
             }
-            
+
             last_uid = current_uid;
             last_detection_time = millis();
             ui.updateButtonStates();
         }
     } else {
-        // No tag present
+        // Tag removed — clear debounce and allow retry on next placement
         if (!last_uid.isEmpty()) {
             Serial.println("RFID: Tag removed");
             last_uid = "";
+            last_read_failed = false;
         }
     }
 }
@@ -195,5 +198,12 @@ void loop() {
     }
 
     feedback.update();
+
+    // ERROR state auto-dismiss: tick() fires TIMEOUT after auto_dismiss_ms
+    if (sysState.tick()) {
+        ui.screenMain.setWriteStatus("Ready");
+        ui.updateButtonStates();
+    }
+
     delay(5);
 }

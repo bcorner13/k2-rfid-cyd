@@ -50,8 +50,10 @@ void UIManager::init() {
     screenSpoolDetail.init();   // deferred — actual creation on first show()
     screenCustomEntry.init();   // deferred — actual creation on first show()
     screenWifi.init();
+    screenRfidRaw.init();
 
     // Register event handlers once (not on every screen transition)
+    lv_obj_add_event_cb(screenMain.labelWriteStatus, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_CLICKED, NULL);
@@ -66,8 +68,10 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenSettings.btnSetupWifi, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnResetWifi, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnRestart, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenSettings.btnRfidRaw, event_handler, LV_EVENT_CLICKED, NULL);
 
     lv_obj_add_event_cb(screenAbout.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenRfidRaw.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
@@ -152,12 +156,23 @@ void UIManager::event_handler(lv_event_t* e) {
     lv_obj_t* obj = (lv_obj_t*) lv_event_get_target(e);
 
     if (code == LV_EVENT_CLICKED) {
+        // Error dismiss: tap status label to return to IDLE (always allowed)
+        if (obj == ui.screenMain.labelWriteStatus &&
+                sysState.getCurrentState() == SystemState::ERROR) {
+            sysState.handleEvent(SystemEvent::USER_DISMISS);
+            ui.screenMain.setWriteStatus("Ready");
+            ui.updateButtonStates();
+            return;
+        }
+
         // Navigation (always allowed regardless of state)
         if (obj == ui.screenMain.btnSettings) { ui.showSettingsScreen(); return; }
         if (obj == ui.screenLibrary.btnBack) { ui.showMainScreen(); return; }
         if (obj == ui.screenSettings.btnBack) { ui.showMainScreen(); return; }
         if (obj == ui.screenSettings.btnAbout) { ui.showAboutScreen(); return; }
+        if (obj == ui.screenSettings.btnRfidRaw) { ui.showRfidRawScreen(); return; }
         if (obj == ui.screenAbout.btnBack) { ui.showSettingsScreen(); return; }
+        if (obj == ui.screenRfidRaw.btnBack) { ui.showSettingsScreen(); return; }
         if (obj == ui.screenInventory.btnBack) { ui.showMainScreen(); return; }
         if (obj == ui.screenSpoolDetail.btnBack) { ui.showInventoryScreen(); return; }
         if (obj == ui.screenCustomEntry.btnCancel) { ui.showInventoryScreen(); return; }
@@ -462,6 +477,10 @@ void UIManager::showSettingsScreen() {
 
 void UIManager::showAboutScreen() {
     screenAbout.show();
+}
+
+void UIManager::showRfidRawScreen() {
+    screenRfidRaw.show();
 }
 
 void UIManager::showSpoolDetail(const String& spool_id) {

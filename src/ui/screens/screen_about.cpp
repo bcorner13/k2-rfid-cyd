@@ -79,6 +79,7 @@ void ScreenAbout::init() {
     labelMemInfo  = makeLabel(infoContainer);
     labelFlashInfo = makeLabel(infoContainer);
     labelStorageInfo = makeLabel(infoContainer);
+
 }
 
 void ScreenAbout::show() {
