@@ -40,7 +40,16 @@ void StateMachine::enterError(const String& message, uint16_t autoDismissMs, boo
     _errorCtx.message = message;
     _errorCtx.auto_dismiss_ms = autoDismissMs;
     _errorCtx.retryable = retryable;
+    _errorEnteredMs = millis();
     transitionTo(SystemState::ERROR);
+}
+
+bool StateMachine::tick() {
+    if (currentState != SystemState::ERROR) return false;
+    if (_errorCtx.auto_dismiss_ms == 0) return false;
+    if (millis() - _errorEnteredMs < _errorCtx.auto_dismiss_ms) return false;
+    handleEvent(SystemEvent::TIMEOUT);
+    return true;
 }
 
 void StateMachine::transitionTo(SystemState newState) {

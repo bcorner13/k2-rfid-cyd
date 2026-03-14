@@ -14,6 +14,7 @@ public:
     lv_obj_t* btnResetWifi;
     lv_obj_t* btnRestart;
     lv_obj_t* btnAbout;
+    lv_obj_t* btnRfidRaw;
 };
 
 extern ScreenSettings screenSettings;
