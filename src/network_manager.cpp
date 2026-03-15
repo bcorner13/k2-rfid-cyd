@@ -28,13 +28,14 @@ void AppNetwork::process() {
 }
 
 bool AppNetwork::connect() {
-    // Try to connect with saved creds, non-blocking
+    // WiFi.SSID() only returns a value when already connected, NOT from NVS on cold
+    // boot — so don't gate on it. WiFi.begin() with no args reconnects to the last
+    // saved network from NVS regardless of current connection state.
+    WiFi.persistent(true);        // Ensure credentials are written to NVS on connect
+    WiFi.setAutoReconnect(true);  // Auto-reconnect if connection drops mid-session
     WiFi.mode(WIFI_STA);
-    if (WiFi.SSID().length() > 0) {
-        WiFi.begin();
-        return true;
-    }
-    return false;
+    WiFi.begin();                 // Reconnect using stored NVS credentials
+    return true;
 }
 
 void AppNetwork::startConfigPortal() {

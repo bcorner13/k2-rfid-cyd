@@ -188,6 +188,15 @@ void loop() {
     network.process();
     rfid_task(); // 🟢 Run the auto-detection task
 
+    // Update status bar (battery placeholder + WiFi) every 2 seconds
+    static uint32_t last_status_ms = 0;
+    if (now - last_status_ms >= 2000) {
+        bool wifiOk = network.isConnected();
+        int8_t rssi  = wifiOk ? (int8_t)WiFi.RSSI() : 0;
+        ui.updateStatusBar(wifiOk, rssi, wifiOk ? WiFi.SSID().c_str() : nullptr);
+        last_status_ms = now;
+    }
+
     // If we are in WiFi Config state and just connected, wrap up and return to settings
     if (sysState.getCurrentState() == SystemState::WIFI_CONFIG && network.isConnected()) {
         Serial.println("WiFi Connected! Exiting config portal...");

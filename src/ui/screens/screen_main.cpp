@@ -64,8 +64,8 @@ void ScreenMain::init() {
     lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
 
-    /* --- Grid: content row | grey line | bottom buttons (left/right/bottom = 3 regions) --- */
-    static lv_coord_t row_dsc[] = {LV_GRID_FR(1), 4, 100, LV_GRID_TEMPLATE_LAST};
+    /* --- Grid: status bar | content row | grey line | bottom buttons --- */
+    static lv_coord_t row_dsc[] = {24, LV_GRID_FR(1), 4, 100, LV_GRID_TEMPLATE_LAST};
     static lv_coord_t col_dsc[] = {LV_GRID_FR(1), 4, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     lv_obj_set_layout(screen, LV_LAYOUT_GRID);
     lv_obj_set_grid_dsc_array(screen, col_dsc, row_dsc);
@@ -73,19 +73,41 @@ void ScreenMain::init() {
     lv_obj_set_style_pad_row(screen, 0, 0);
     lv_obj_set_style_pad_column(screen, 0, 0);
 
-    /* --- Grey horizontal line above buttons --- */
+    /* --- Status bar (row 0, all 3 cols) --- */
+    statusBar = lv_obj_create(screen);
+    lv_obj_set_style_bg_color(statusBar, lv_color_hex(0x1E1E1E), 0);
+    lv_obj_set_style_border_width(statusBar, 0, 0);
+    lv_obj_set_style_radius(statusBar, 0, 0);
+    lv_obj_set_style_pad_hor(statusBar, 8, 0);
+    lv_obj_set_style_pad_ver(statusBar, 0, 0);
+    lv_obj_clear_flag(statusBar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_grid_cell(statusBar, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_flex_flow(statusBar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(statusBar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    labelBattStatus = lv_label_create(statusBar);
+    lv_label_set_text(labelBattStatus, LV_SYMBOL_BATTERY_FULL);
+    lv_obj_set_style_text_font(labelBattStatus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(labelBattStatus, lv_color_hex(0x808080), 0);
+
+    labelWifiStatus = lv_label_create(statusBar);
+    lv_label_set_text(labelWifiStatus, LV_SYMBOL_WIFI " No WiFi");
+    lv_obj_set_style_text_font(labelWifiStatus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(labelWifiStatus, lv_color_hex(0x606060), 0);
+
+    /* --- Grey horizontal line above buttons (row 2) --- */
     lv_obj_t* lineH = lv_obj_create(screen);
     lv_obj_set_size(lineH, LV_PCT(100), 4);
     lv_obj_set_style_bg_color(lineH, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(lineH, 0, 0);
     lv_obj_set_style_radius(lineH, 0, 0);
-    lv_obj_set_grid_cell(lineH, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 1, 1);
+    lv_obj_set_grid_cell(lineH, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 2, 1);
 
-    /* --- Left area: color block (tap opens color picker) --- */
+    /* --- Left area: color block (tap opens color picker) (row 1) --- */
     lv_obj_t* leftPanel = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(leftPanel, 0, 0);
     lv_obj_set_style_border_width(leftPanel, 0, 0);
-    lv_obj_set_grid_cell(leftPanel, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_grid_cell(leftPanel, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
     lv_obj_set_flex_flow(leftPanel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(leftPanel, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
@@ -103,19 +125,19 @@ void ScreenMain::init() {
     lv_obj_set_style_text_color(labelHexColor, lv_color_black(), 0);
     lv_obj_set_align(labelHexColor, LV_ALIGN_CENTER);
 
-    /* --- Vertical grey divider (content area only, not bottom) --- */
+    /* --- Vertical grey divider (content area only, row 1) --- */
     lv_obj_t* lineV = lv_obj_create(screen);
     lv_obj_set_size(lineV, 4, LV_PCT(100));
     lv_obj_set_style_bg_color(lineV, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(lineV, 0, 0);
     lv_obj_set_style_radius(lineV, 0, 0);
-    lv_obj_set_grid_cell(lineV, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_grid_cell(lineV, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
 
-    /* --- Right area: brand, type, volume --- */
+    /* --- Right area: brand, type, volume (row 1) --- */
     lv_obj_t* rightPanel = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(rightPanel, 0, 0);
     lv_obj_set_style_border_width(rightPanel, 0, 0);
-    lv_obj_set_grid_cell(rightPanel, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_grid_cell(rightPanel, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
     lv_obj_set_flex_flow(rightPanel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(rightPanel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(rightPanel, 20, 0);
@@ -168,11 +190,11 @@ void ScreenMain::init() {
     lv_obj_set_style_text_font(labelWeight, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(labelWeight, lv_color_black(), 0);
 
-    /* --- Bottom region: status + Read, Write, Library, Settings (all visible) --- */
+    /* --- Bottom region: status + Read, Write, Library, Settings (row 3) --- */
     lv_obj_t* bottomArea = lv_obj_create(screen);
     lv_obj_set_style_bg_color(bottomArea, lv_color_hex(0xE8E8E8), 0);
     lv_obj_set_style_border_width(bottomArea, 0, 0);
-    lv_obj_set_grid_cell(bottomArea, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 2, 1);
+    lv_obj_set_grid_cell(bottomArea, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 3, 1);
     lv_obj_set_flex_flow(bottomArea, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(bottomArea, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(bottomArea, 8, 0);
@@ -233,6 +255,23 @@ void ScreenMain::setWriteStatus(const char* status, bool success, bool neutral) 
         lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xC80000), 0);
     }
     lv_obj_invalidate(labelWriteStatus);
+}
+
+void ScreenMain::updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid) {
+    // Battery: static placeholder until ADC is wired; grey icon
+    lv_label_set_text(labelBattStatus, LV_SYMBOL_BATTERY_FULL);
+    lv_obj_set_style_text_color(labelBattStatus, lv_color_hex(0x808080), 0);
+
+    // WiFi: green + SSID when connected, grey when not
+    if (wifiConnected) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI " %.12s", ssid ? ssid : "");
+        lv_label_set_text(labelWifiStatus, buf);
+        lv_obj_set_style_text_color(labelWifiStatus, lv_color_hex(0x00C853), 0);
+    } else {
+        lv_label_set_text(labelWifiStatus, LV_SYMBOL_WIFI " No WiFi");
+        lv_obj_set_style_text_color(labelWifiStatus, lv_color_hex(0x606060), 0);
+    }
 }
 
 void ScreenMain::update(const SpoolData& data) {
