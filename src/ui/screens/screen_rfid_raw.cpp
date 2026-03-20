@@ -11,7 +11,7 @@ ScreenRfidRaw screenRfidRaw;
 // ---------------------------------------------------------------------------
 static constexpr int kColCount = 8;
 static const struct { const char* hdr; uint16_t w; } kCols[kColCount] = {
-    { "M DD YY",     100 },   // date  (pos 0-4)
+    { "Date",        100 },   // date  (pos 0-4)
     { "venderId",     90 },   // vendor (pos 5-8)
     { "batch",        70 },   // batch  (pos 9-10)
     { "filamentId",  110 },   // sep+type (pos 11-16)
@@ -132,11 +132,21 @@ void ScreenRfidRaw::populateTable(const char* payload) {
         return;
     }
 
-    char dateFmt[12], vendor[8], batch[8], matId[8], color[10], length[8], serial[8], reserve[8];
+    char dateFmt[16], vendor[8], batch[8], matId[8], color[10], length[8], serial[8], reserve[8];
 
-    // date (pos 0-4): reformat "MDDYY" → "M DD YY"
-    snprintf(dateFmt, sizeof(dateFmt), "%c %c%c %c%c",
-             payload[0], payload[1], payload[2], payload[3], payload[4]);
+    // date (pos 0-4): prefix(1) + month_hex(1) + day(1) + year_2(2)
+    // Month is a hex digit: '1'-'9' = Jan-Sep, 'A'=Oct, 'B'=Nov, 'C'=Dec.
+    {
+        static const char* kMon[13] = {
+            "?","Jan","Feb","Mar","Apr","May","Jun",
+            "Jul","Aug","Sep","Oct","Nov","Dec"
+        };
+        char mch = payload[1];
+        int mi = (mch >= '1' && mch <= '9') ? (mch - '0') :
+                 (mch >= 'A' && mch <= 'C') ? (mch - 'A' + 10) : 0;
+        snprintf(dateFmt, sizeof(dateFmt), "%s %c '%.2s",
+                 kMon[mi], payload[2], payload + 3);
+    }
 
     // vendor (pos 5-8): 4 chars as-is
     snprintf(vendor, sizeof(vendor), "%.4s", payload + 5);
@@ -147,8 +157,8 @@ void ScreenRfidRaw::populateTable(const char* payload) {
     // filamentId (pos 11-16): separator(1) + material type(5) = 6 chars
     snprintf(matId, sizeof(matId), "%.6s", payload + 11);
 
-    // color (pos 17-23): color prefix(1) + hex RGB(6) = 7 chars
-    snprintf(color, sizeof(color), "%.7s", payload + 17);
+    // color (pos 18-23): skip Creality's '0' prefix, show as XRRGGBB
+    snprintf(color, sizeof(color), "X%.6s", payload + 18);
 
     // length (pos 24-27): 4 chars as-is (mm × 10 or raw value)
     snprintf(length, sizeof(length), "%.4s", payload + 24);

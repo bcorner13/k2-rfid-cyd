@@ -14,98 +14,90 @@ clean boot output.
 
 Issues collected 2026-03-10 by walking through the physical device. Ordered by impact and dependency.
 
-### Step 1 — Fix Issue #9: PN532 invalid pin log errors (cosmetic, low risk)
+### ~~Step 1 — Fix Issue #9: PN532 invalid pin log errors~~ ✅ DONE
 
-**Symptom:** Two `Invalid pin selected` messages at boot from the PN532 constructor.
-**Root cause:** `PN532_IRQ` and `PN532_RESET` are defined as `(-1)` (int). `Adafruit_PN532` constructor
-takes `uint8_t`, so -1 silently becomes 255 (0xFF). Arduino HAL's `__pinMode(255)` logs the error.
-RFID still functions — cosmetic only.
-**Fix:** Change defines to `(0xFF)` (the documented "no pin" sentinel for this library), or guard
-`__pinMode` calls with a valid-pin check.
+**Fix applied in `b8edfba`:** `PN532_IRQ` and `PN532_RESET` changed to `(0xFF)` in `src/rfid_driver.cpp`.
 
 ---
 
-### Step 2 — Fix Issues #3 & #7: State machine UI lockout (no ERROR→IDLE recovery)
+### ~~Step 2 — Fix Issues #3 & #7: State machine UI lockout~~ ✅ DONE
 
-**Symptom #3:** Any RFID auth failure → `State: -> ERROR` → all buttons ghosted except Settings→About.
-Only fix is reboot.
-**Symptom #7:** Settings → Update Database → `State: -> UPDATING DB` → `State: -> ERROR` → same total
-UI lockout.
-**Root cause:** Both paths share the same bug: the `ERROR` state in the state machine has no exit
-transition back to `IDLE`. `updateButtonStates()` disables all action buttons in ERROR state with no
-dismiss / retry path wired to the UI.
-**Fix:** (a) Add `ERROR → IDLE` transition triggered by a dismiss tap or a timeout. (b) Wire a visible
-"Dismiss" / "Retry" button or status-bar tap to fire it. (c) Ensure `updateButtonStates()` re-enables
-controls once back in IDLE.
+**What was already in place:** ERROR→IDLE transitions (USER_DISMISS, USER_RETRY, TIMEOUT) in state
+machine; `tick()` auto-dismiss; `labelWriteStatus` tap-to-dismiss on Main; `loop()` calls `tick()` and
+re-enables buttons.
 
----
-
-### Step 3 — Fix Issue #2: RFID Key A authentication failure on real Creality spool
-
-**Symptom:** Auto-read detects tag `F5:A7:68:19` but fails: `Auth failed for sector 1`.
-**Root cause (suspected):** `generateKeyA()` passes the raw UID buffer (4–7 bytes) directly to
-`mbedtls_aes_crypt_ecb()` which requires a full 16-byte input block. The remaining bytes are whatever
-is on the stack — a buffer overread producing a wrong key, hence auth failure.
-**Fix:** Zero-pad the UID into a 16-byte array before calling AES-ECB. Verify the derivation scheme
-against the Creality K2 Plus RFID spec (`docs/rfid/creality-k2plus-rfid-spec.md`) to confirm the
-correct key input format (some implementations XOR or hash additional fields before AES).
+**Remaining gaps fixed (2026-03-20):**
+- `showMainScreen()` now preserves the status label in ERROR state instead of resetting to "Ready".
+- DB update failure (`Issue #7`): after `DB_UPDATE_FAILED`, error message is shown on `labelWriteStatus`
+  and UI navigates to Main so the user can see it (shown in red) and tap to dismiss. Previously the
+  Settings screen buttons went grey for 15 s with no visual feedback.
 
 ---
 
-### Step 4 — Fix Issue #1: Splash screen WiFi status not displayed
+### ~~Step 3 — Fix Issue #2: RFID Key A authentication failure on real Creality spool~~ ✅ DONE
 
-**Symptom:** Splash shows but WiFi connection status label is blank / not updating. No "Continue"
-button visible. Feature was working in the Gemini session that created it.
-**Likely cause:** Event callback or label update path broken during the board migration merge; status
-labels may not have been wired to the WiFi state callbacks, or the 10-second hold timer fires before
-the labels populate.
-**Fix:** Trace WiFi status → splash label update path; confirm `screen_wifi` / splash status labels
-are populated on `NETWORK_CONNECTED` / `NETWORK_FAILED` events; confirm Continue button is shown and
-tap navigates to main screen.
+**Code fix already in place** (see `generateKeyA()` comment block, rfid_driver.cpp:940–964):
+- UID is cycled into a 16-byte `input[16]` buffer (`uid[i % currentUidLen]`) — no stack overread.
+- Separate `aes_out[16]` used for AES output; only 6 bytes copied to `keyOut` — no overflow.
+- Algorithm matches DnG-Crafts/K2-RFID Utils.cs CreateKey() reference (cycling, not zero-pad).
+- Auth log now prints UID + derived key on one line for cross-checking with reference tools.
 
----
-
-### Step 5 — Fix Issue #8: First-boot .tmp file errors for config.json / inventory.json
-
-**Symptom:** On first boot (no existing files), both `config.json` and `inventory.json` log
-"does not exist" errors during `.tmp` recovery.
-**Root cause:** `recoverTmpFile()` calls `LittleFS.exists()` on the `.tmp` path — if neither the base
-file nor the `.tmp` exists, the error is benign but noisy. The atomic-write pattern assumes at least
-one of the two files exists.
-**Fix:** Guard `recoverTmpFile()` with an existence check; on first boot, silently skip recovery and
-proceed to create the file from defaults. No functional impact after boot; this is a log-cleanliness
-fix.
+**Confirmed on hardware:** Spool successfully read in a prior session. Key A derivation correct.
 
 ---
 
-### Step 6 — Fix Issue #6: Audio feedback silent on RFID read/write
+### ~~Step 4 — Fix Issue #1: Splash screen WiFi status not displayed~~ ✅ DONE
 
-**Symptom:** RFID read/write completes (or fails) with no audio. Board is V3.1 with onboard speaker.
-**Context:** `uiSound.init()` must be called in `setup()` with the correct path for V3.1. V3.1 uses
-I2S (same as V2.0 path; build flag `-DBOARD_MATOUCH_V2` enables it). `playClick()` / `playStartup()`
-calls may be commented out or the feedback module may call legacy GPIO buzzer functions instead of
-`uiSound`.
-**Fix:** Confirm `-DBOARD_MATOUCH_V2` in `platformio.ini` for the V3.1 env. Confirm `uiSound.init()`
-called in `setup()`. Wire feedback module events (`RFID_READ_OK`, `RFID_READ_FAIL`, etc.) to
-`uiSound.playClick()` / tone sequences.
-**Future (non-blocking):** Add a distinct ascending scale melody on successful read, descending on
-failure, and a random short progression on boot. Log as enhancement once base audio is working.
+**Label update path:** Already working — `lv_tick_set_cb(millis)` ensures LVGL tick advances during
+`setup()` so `lv_timer_handler()` actually flushes dirty areas. Each `splash_update_status()` call
+already invokes `lv_timer_handler()`.
+
+**Continue button (2026-03-20):** Implemented in `lvgl_display.cpp`:
+- `splash_show_continue_button()` creates a tappable button on the splash screen.
+- `splash_is_continue_pressed()` returns true when tapped.
+- `setup()` calls `splash_show_continue_button()` after all 4 status items are populated.
+- The 10-second hold loop breaks immediately on tap; auto-advances at 10 s if not tapped.
 
 ---
 
-### Step 7 — Fix Issues #4 & #5: About screen live status + investigate low heap
+### ~~Step 5 — Fix Issue #8: First-boot .tmp file errors~~ ✅ DONE (already correct)
 
-**Issue #4:** About screen shows only static hardware specs. Should show live WiFi SSID/IP and RFID
-connection status at minimum.
-**Fix:** Add two live-status labels to `ScreenAbout::show()` populated from `network.isConnected()` /
-`network.getSSID()` / `network.getIP()` and `rfid.isInitialized()`. Call `show()` each time the
-screen is loaded (already the pattern).
+`recoverTmpFile()` opens with `if (!LittleFS.exists(tmpPath.c_str())) return;` — silently returns
+when neither the base file nor its `.tmp` exists (first boot). `ConfigManager::load()` silently calls
+`save()` when `/config.json` is absent. `InventoryManager::init()` logs an informational
+"No inventory.json found, starting empty." (not an error) before creating defaults. No log noise.
 
-**Issue #5:** Heap free reported as ~78KB — suspiciously low for a device with 512KB SRAM and 8MB PSRAM.
-**Investigate:** Check whether LVGL draw buffers, ArduinoJson doc, and PSRAM allocations are correctly
-routed to PSRAM. Check for heap fragmentation. Log `ESP.getFreeHeap()`, `ESP.getFreePsram()`,
-`ESP.getMinFreeHeap()` at startup and after each major init step. 78KB heap may be normal if most
-working memory is in PSRAM — need to confirm PSRAM free is healthy first.
+---
+
+### ~~Step 6 — Fix Issue #6: Audio feedback silent on RFID read/write~~ ✅ DONE
+
+Three root causes fixed (2026-03-20):
+1. **`-DBOARD_MATOUCH_V2` added to `platformio.ini`** — activates I2S UISound path (GPIO2/19/20),
+   sets `FEEDBACK_HARDWARE_ENABLED=0`, disables backlight PWM (V3.1 hardware always-on like V2.0).
+   Also added `-DBOARD_MATOUCH_V31` marker for future conditionals.
+2. **`uiSound.init()` + `uiSound.playStartup()` uncommented** in `setup()` — I2S now initialises and
+   plays the three-note startup melody on boot.
+3. **`feedback.cpp` wired to `uiSound`** for all event methods when `FEEDBACK_HARDWARE_ENABLED=0`:
+   - `readSuccess` / `tagDetected` / `spoolSaved` → short tones / click
+   - `writeSuccess` / `dbUpdateSuccess` → ascending A5→E6 pair
+   - `operationFailed` / `dbUpdateFailed` → low E4 tone (400 ms)
+   All respect `config.data.beep_enabled`. V1.3 GPIO buzzer path is unchanged.
+
+---
+
+### ~~Step 7 — Fix Issues #4 & #5: About screen live status + investigate low heap~~ ✅ DONE
+
+**Issue #4 fix (2026-03-20):** Added `labelWifiStatus` and `labelRFIDLive` to `ScreenAbout::show()`:
+- WiFi: shows SSID + IP in green, or "Not connected" in red — via `network.isConnected()` / `WiFi.SSID()` / `WiFi.localIP()`.
+- RFID: shows "PN532 OK | IC=0x32 ver=1.6" in green, or "not found" in red — via `rfid.getFirmwareVersion()`.
+- Memory line now shows PSRAM free KB alongside total.
+
+**Issue #5 resolved (2026-03-20):** Per-step heap/PSRAM logging added to `setup()`. Observed on hardware:
+- PSRAM free ≈ 7424KB (out of ~7MB reported usable) — all large allocations correctly in PSRAM.
+- Internal heap free ≈ 68KB — normal for ESP32-S3 at this boot stage; FreeRTOS + Arduino overhead
+  accounts for the difference. No fragmentation concern.
+- **Verdict: memory is healthy.** 68KB internal heap is not low — it's expected when PSRAM carries
+  the working set.
 
 ---
 
@@ -133,6 +125,8 @@ working memory is in PSRAM — need to confirm PSRAM free is healthy first.
 - [x] **FilamentDB** — 40 profiles loaded from LittleFS `material_database.json`. ArduinoJson v7.
 - [x] **P0 + P1 FSD tiers implemented** (code exists; real-hardware validation in progress per
   Milestone 1 bug fixes above).
+- [x] **Issue #9 — PN532 invalid pin log errors** — `PN532_IRQ`/`PN532_RESET` set to `0xFF` sentinel
+  (`b8edfba`). No more `Invalid pin selected` boot noise.
 
 ---
 
@@ -152,6 +146,9 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 - CRC32 and mirror sectors written and validated on read-back
 - SpoolData fields (date code, vendor, material, color, length, serial) round-trip correctly
 - State transitions: IDLE → READING/WRITING → IDLE (no lockout, no stale state)
+- **Remaining grams on main screen:** After auto-read, surface `rfid.getLastMirrors()` data
+  (`remain_weight_g`) on the dashboard so users can see current vs original weight at a glance.
+  Mirror sectors use the standard MIFARE key (confirmed 2026-03-20 on Creality spool).
 
 ### Milestone 3 — Inventory Flow
 - Scan tag → SpoolRecord auto-added to inventory (or reconciled if UID already exists)
@@ -163,9 +160,28 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 ### Milestone 4 — Polish & Completeness
 - Audio feedback: distinct tones for read-ok / write-ok / error / low-battery; boot melody
 - About screen: live WiFi SSID/IP + RFID status (Issue #4)
-- Settings screen: brightness slider, beep on/off toggle both functional
+- Settings screen: beep on/off toggle functional
 - Sleep mode: screen timeout + wake on touch (GT911 interrupt)
 - Memory audit: PSRAM usage confirmed healthy (Issue #5), heap budget documented
+- **Multi-brand support:** Our current `material_database.json` only contains Creality and
+  Generic (2 brands). The K2-RFID project's database includes third-party brands (eSUN
+  confirmed). Two work items:
+  1. **Replace/expand the DB file:** Source the fuller K2-RFID material database which
+     includes eSUN and other brands. Re-upload to LittleFS (`pio run -t uploadfs`).
+  2. **Library UI:** Brand filter/dropdown must enumerate brands dynamically from
+     `FilamentProfile.brand` — not hardcoded — so new brands appear automatically.
+  3. **RFID read brand mapping:** Only vendor ID `0276` → Creality is currently mapped.
+     Add known third-party vendor IDs as discovered. Unknown IDs show raw ID + allow
+     user assignment via Custom Spool Entry.
+  Brands confirmed needed: Creality, eSUN, GREETECH, Generic (fallback).
+- **Filament specs in UI (temps):** Surface `nozzle_temp` / `bed_temp` from `FilamentProfile`
+  on the dashboard and spool detail screen for library-picked spools.
+  - Creality v1 RFID tags do NOT store temps on-tag (CFS payload has no temp fields).
+  - Our v2 tag format stores temps in sector 10 (`ExtTempBlock`: nozzle min/max/default,
+    bed min/max/default) — populated when writing a tag from a library profile.
+  - On scan: if tag is v2 + has our origin magic, read temps from sector 10; otherwise
+    fall back to DB lookup by material type (best-effort match).
+  - Custom Spool Entry wizard needs nozzle temp + bed temp input fields.
 
 ### Milestone 5 — Production Prep *(stretch / future)*
 - Battery monitoring via GPIO6 ADC (voltage-to-SoC table; low-battery state)
@@ -173,6 +189,21 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 - V3.1 I2S audio path confirmed (currently using V2.0 path as proxy)
 - OTA database update from printer HTTP API tested end-to-end
 - P2 FSD items: I2C bus recovery (P2.1), string length enforcement (P2.6), memory monitoring (P2.5)
+
+### Milestone 6 — Bambu Lab NFC Read *(stretch)*
+- Bambu Lab AMS spools use **NFC Forum Type 2 tags** (NTAG213/215), not MIFARE Classic.
+  The PN532 can read these in passive mode — no Key A auth required.
+- Tag format is community-reverse-engineered (not officially documented by Bambu Lab).
+  Reference: community work at github.com/Bambu-Research-Group/RFID-Tag-Guide
+- **Read-only goal:** detect tag type on scan, parse Bambu payload (material type, color,
+  min/max temps, spool weight) and display on dashboard — same UX as a Creality spool read.
+- No write support planned (Bambu tags are write-locked after factory programming).
+- Implementation notes:
+  - `checkTagPresent()` already calls `readPassiveTargetID()`; NTAG returns ATQA 0x0044
+    (vs MIFARE Classic 0x0002/0x0004) — use this to branch tag-type detection.
+  - Add `detectTagType()` → enum `{TAG_MIFARE_CLASSIC, TAG_NTAG, TAG_UNKNOWN}`.
+  - Add `readBambuTag(SpoolData& out)` in rfid_driver using `ntag2xx_ReadPage()`.
+  - Map Bambu material codes + color to `SpoolData` fields for unified inventory flow.
 
 ---
 
@@ -187,4 +218,4 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 
 ---
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-20*

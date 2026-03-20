@@ -28,6 +28,12 @@ static char s_rawDump[1024] = {};
 // Populated only on a successful readCFSTag(); empty if no tag has been read yet.
 static char s_lastPayload[48] = {};
 
+// Last mirror read result — populated inside readCFSTag() immediately after payload read,
+// while the tag is still selected in the same MIFARE session.
+static MirrorResult s_lastMirrors = {};
+
+const MirrorResult& RFIDDriver::getLastMirrors() const { return s_lastMirrors; }
+
 const char* RFIDDriver::getLastRawDump() const { return s_rawDump; }
 const char* RFIDDriver::getLastPayload()  const { return s_lastPayload; }
 
@@ -106,7 +112,11 @@ bool RFIDDriver::authenticateSector(uint8_t sector) {
     if (!keyACached) {
         generateKeyA(currentUid, cachedKeyA);
         keyACached = true;
-        Serial.printf("Auth: derived key: %02X %02X %02X %02X %02X %02X\n",
+        // Log UID + derived key together so they can be cross-checked against
+        // reference tools (e.g. DnG-Crafts/K2-RFID for the same UID).
+        Serial.printf("Auth: UID");
+        for (uint8_t i = 0; i < currentUidLen; i++) Serial.printf(" %02X", currentUid[i]);
+        Serial.printf("  key: %02X %02X %02X %02X %02X %02X\n",
                       cachedKeyA[0], cachedKeyA[1], cachedKeyA[2],
                       cachedKeyA[3], cachedKeyA[4], cachedKeyA[5]);
     }
@@ -915,6 +925,19 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
                       parsed.getRawData().c_str(),
                       parsed.getType().c_str(),
                       parsed.getWeight());
+
+        // Read mirror sectors (6-8) now, while tag is still selected in this session.
+        // Storing result so callers can retrieve remaining filament without a second session.
+        s_lastMirrors = readMirrors();
+        if (s_lastMirrors.valid) {
+            Serial.printf("Mirrors: remain=%umm / %ug  counter=%u\n",
+                          s_lastMirrors.data.remain_len_mm,
+                          s_lastMirrors.data.remain_weight_g,
+                          s_lastMirrors.data.update_counter);
+        } else {
+            Serial.println("Mirrors: unreadable (mutable sectors may use different keys)");
+        }
+
         return true;
     }
 

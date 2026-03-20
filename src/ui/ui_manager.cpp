@@ -395,11 +395,16 @@ void UIManager::event_handler(lv_event_t* e) {
             if (network.updateFilamentDB()) {
                 sysState.handleEvent(SystemEvent::DB_UPDATE_SUCCESS);
                 feedback.dbUpdateSuccess();
+                ui.updateButtonStates();
             } else {
                 sysState.handleEvent(SystemEvent::DB_UPDATE_FAILED);
                 feedback.dbUpdateFailed();
+                // Show error on Main so the user can see it and tap labelWriteStatus to dismiss.
+                // showMainScreen() preserves the status label in ERROR state.
+                ui.screenMain.setWriteStatus(
+                    sysState.getErrorContext().message.c_str(), false, false);
+                ui.showMainScreen();
             }
-            ui.updateButtonStates();
         }
         else if (obj == ui.screenSettings.btnSetupWifi) {
             sysState.handleEvent(SystemEvent::WIFI_CONFIG_REQUEST);
@@ -465,7 +470,11 @@ void UIManager::event_handler(lv_event_t* e) {
 
 void UIManager::showMainScreen() {
     updateDashboardFromSpool(currentSpool);
-    screenMain.setWriteStatus("Ready");
+    // Don't clear the status label when in ERROR — preserve the error message
+    // so the user can see it and tap to dismiss.
+    if (sysState.getCurrentState() != SystemState::ERROR) {
+        screenMain.setWriteStatus("Ready");
+    }
     screenMain.show();
     updateButtonStates();  // P1.9: sync button states on screen transition
 }

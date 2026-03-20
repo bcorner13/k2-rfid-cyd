@@ -19,6 +19,8 @@ private:
     lv_obj_t* labelMemInfo;
     lv_obj_t* labelFlashInfo;
     lv_obj_t* labelStorageInfo;
+    lv_obj_t* labelWifiStatus;
+    lv_obj_t* labelRFIDLive;
 };
 
 extern ScreenAbout screenAbout;

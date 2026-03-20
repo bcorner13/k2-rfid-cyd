@@ -6,7 +6,6 @@ struct AppConfig {
     bool beep_enabled = true;
     bool write_empty_only = true;
     bool clone_serial = false;
-    uint8_t brightness = 255;
     String printer_ip = "192.168.1.100";
 
     // P1.10: Database update metadata (FSD Section 5.6)

@@ -1,5 +1,6 @@
 #include <feedback.h>
 #include <config_manager.h>
+#include <ui/ui_sound.h>
 
 Feedback feedback;
 
@@ -68,44 +69,86 @@ void Feedback::update() {
 }
 
 // --- High-level patterns (FSD Section 9.4) ---
+//
+// Hardware routing:
+//   FEEDBACK_HARDWARE_ENABLED=1 (V1.3): non-blocking GPIO buzzer + LED patterns.
+//   FEEDBACK_HARDWARE_ENABLED=0 (V2.0/V3.1): blocking I2S tones via uiSound.
+//     Blocking is acceptable here — all calls happen after an operation completes.
+//     Tone pairs use ascending (success) or low (fail) frequencies.
+
+#if !FEEDBACK_HARDWARE_ENABLED
+// Helper: play a sound if beep is enabled. Used by all V2.0/V3.1 event methods.
+static void playIfEnabled(int freqHz, int durationMs) {
+    if (config.data.beep_enabled) uiSound.playTone(freqHz, durationMs);
+}
+#endif
 
 void Feedback::readSuccess() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    playIfEnabled(880, 100);                         // A5 — short confirm
+#endif
     startBeepPattern(1, 100, 0);
     ledGreen(true);
     _greenOffAt = millis() + 1000;
 }
 
 void Feedback::writeSuccess() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    if (config.data.beep_enabled) {
+        uiSound.playTone(880, 100);                  // A5
+        delay(60);
+        uiSound.playTone(1320, 120);                 // E6 — ascending pair
+    }
+#endif
     startBeepPattern(2, 100, 100);
     ledGreen(true);
     _greenOffAt = millis() + 1500;
 }
 
 void Feedback::operationFailed() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    playIfEnabled(330, 400);                         // E4 — low, longer
+#endif
     startBeepPattern(1, 500, 0);
     ledRed(true);
     _redOffAt = millis() + 2000;
 }
 
 void Feedback::tagDetected() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    if (config.data.beep_enabled) uiSound.playClick();
+#endif
     startBeepPattern(1, 50, 0);
     ledGreen(true);
     _greenOffAt = millis() + 200;
 }
 
 void Feedback::spoolSaved() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    if (config.data.beep_enabled) uiSound.playClick();
+#endif
     startBeepPattern(1, 100, 0);
     ledGreen(true);
     _greenOffAt = millis() + 500;
 }
 
 void Feedback::dbUpdateSuccess() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    if (config.data.beep_enabled) {
+        uiSound.playTone(880, 100);
+        delay(60);
+        uiSound.playTone(1320, 120);
+    }
+#endif
     startBeepPattern(2, 100, 100);
     ledGreen(true);
     _greenOffAt = millis() + 1000;
 }
 
 void Feedback::dbUpdateFailed() {
+#if !FEEDBACK_HARDWARE_ENABLED
+    playIfEnabled(330, 400);
+#endif
     startBeepPattern(1, 500, 0);
     ledRed(true);
     _redOffAt = millis() + 2000;
