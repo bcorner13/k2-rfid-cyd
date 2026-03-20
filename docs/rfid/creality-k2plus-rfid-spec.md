@@ -259,7 +259,14 @@ A compliant tag MUST:
     - Update CRC coverage rules if needed
 
 ---
-# 11. Repository Recommendation
+# 11. External References
+
+- **SimplyPrint — The Creality Material Standard (NFC/RFID for the Creality CFS)**
+  https://help.simplyprint.io/en/article/the-creality-material-standard-nfcrfid-for-the-creality-cfs-1crrofa/
+  Community documentation of the CFS payload format, sector layout, and Key A derivation.
+  Cross-reference against this spec when verifying field offsets or encoding rules.
+
+# 12. Repository Recommendation
 
 Suggested path:
 ```

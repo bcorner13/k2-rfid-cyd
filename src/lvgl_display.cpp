@@ -12,6 +12,8 @@ LV_IMG_DECLARE(logo_thingy);
 static LGFX gfx;
 static lv_obj_t* splash_screen;
 static lv_obj_t* status_container;
+static lv_obj_t* continue_btn = nullptr;
+static bool      continue_pressed = false;
 static int status_label_count = 0;
 
 static void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
@@ -39,8 +41,15 @@ void my_touch_read(lv_indev_t *indev, lv_indev_data_t *data) {
 
 void lvgl_display_init() {
     gfx.begin();
-    gfx.fillScreen(TFT_BLACK); 
+    gfx.fillScreen(TFT_BLACK);
     lv_init();
+
+    // Wire LVGL's tick to Arduino millis() so the display refresh timer
+    // fires correctly during setup() — not just in loop().  Without this,
+    // lv_tick_get() returns 0 throughout setup(), the 30 ms refr period
+    // never elapses, dirty areas never flush, and the splash status labels
+    // are never rendered to the physical display until loop() starts.
+    lv_tick_set_cb([]() -> uint32_t { return (uint32_t)millis(); });
 
     const uint32_t buf_pixels = (gfx.width() * gfx.height()) / 12;
     const uint32_t buf_size_bytes = buf_pixels * sizeof(lv_color_t);
@@ -99,5 +108,24 @@ void splash_update_status(int index, const char* status_text, bool success) {
 }
 
 void lvgl_display_start_ui() {}
-bool splash_is_continue_pressed() { return true; } // Always true to skip loop
-void splash_show_continue_button() {}
+
+bool splash_is_continue_pressed() { return continue_pressed; }
+
+void splash_show_continue_button() {
+    if (continue_btn) return;  // already created
+
+    continue_btn = lv_btn_create(splash_screen);
+    lv_obj_set_size(continue_btn, 200, 50);
+    lv_obj_align(continue_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
+
+    lv_obj_t* lbl = lv_label_create(continue_btn);
+    lv_label_set_text(lbl, "Continue");
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_align(lbl, LV_ALIGN_CENTER);
+
+    lv_obj_add_event_cb(continue_btn, [](lv_event_t*) {
+        continue_pressed = true;
+    }, LV_EVENT_CLICKED, NULL);
+
+    lv_timer_handler();
+}

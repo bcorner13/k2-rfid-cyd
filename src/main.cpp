@@ -18,6 +18,7 @@
 #include <rfid_driver.h>
 #include <Wire.h>
 #include <feedback.h>
+#include <ui/ui_sound.h>
 #include <ui/screens/screen_about.h>
 #include "board_pins.h"
 
@@ -25,20 +26,23 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("--- Booting ---");
+    Serial.printf("Mem[boot]:    heap=%u  psram=%u  minHeap=%u\n",
+                  ESP.getFreeHeap(), ESP.getFreePsram(), ESP.getMinFreeHeap());
 
     // Initialize WDT early to handle boot load
-    esp_task_wdt_init(10, true); 
+    esp_task_wdt_init(10, true);
     esp_task_wdt_add(NULL);
 
     // 1. Initialize display and show splash
     lvgl_display_init();
     Serial.println("Splash Screen Initialized");
+    Serial.printf("Mem[display]: heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
 
     // --- Initialize Sound ---
-    // V1.3: passive buzzer on Mabee GPIO1 (GPIO19). V2.0: I2S on GPIO2/19/20.
-    // Uncomment once audio hardware is connected and board version confirmed.
-    // uiSound.init();
-    // uiSound.playStartup();
+    // V3.1/V2.0: I2S DAC on GPIO2(LRCLK)/GPIO19(DIN)/GPIO20(BCLK) — onboard SPK connector.
+    // Enabled via -DBOARD_MATOUCH_V2 build flag.
+    uiSound.init();
+    uiSound.playStartup();
 
     // 2. Add status labels
     splash_add_status("WiFi", false);
@@ -66,20 +70,30 @@ void setup() {
     uint32_t rfid_ver = rfid.getFirmwareVersion();
     bool rfid_ok = rfid_ver > 0;
     Serial.printf("RFID: %s (ver=0x%08X)\n", rfid_ok ? "OK" : "NOT FOUND", rfid_ver);
+    Serial.printf("Mem[rfid]:    heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     splash_update_status(1, rfid_ok ? "Available" : "Not Found", rfid_ok);
 
     // For now, let's assume Bluetooth is available if the code compiles
     splash_update_status(2, "Available", true);
     bool db_ok = filamentDB.init();
+    Serial.printf("Mem[filamentDB]: heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     splash_update_status(3, db_ok ? "Loaded" : "Failed", db_ok);
 
-    // 4. Force a 10-second pause to show final connection status
-    Serial.println("Booting: holding splash screen for 10 seconds...");
+    // Show Continue button — all status items are now populated.
+    splash_show_continue_button();
+
+    // 4. Hold splash up to 10 seconds; exit early if user taps Continue.
+    Serial.println("Booting: holding splash screen (max 10s)...");
     uint32_t wait_start = millis();
     while (millis() - wait_start < 10000) {
         esp_task_wdt_reset();
-        
-        // Keep updating WiFi status in case it connects during the 10s
+
+        if (splash_is_continue_pressed()) {
+            Serial.println("Splash: Continue tapped");
+            break;
+        }
+
+        // Keep updating WiFi status in case it connects during the wait
         static bool last_wifi_state = false;
         bool wifi_now = network.isConnected();
         if (wifi_now != last_wifi_state) {
@@ -91,7 +105,7 @@ void setup() {
             }
             last_wifi_state = wifi_now;
         }
-        
+
         lv_timer_handler();
         delay(20);
     }
@@ -102,12 +116,15 @@ void setup() {
     sysState.init();
     config.init();
     inventory.init();
+    Serial.printf("Mem[inventory]:  heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     feedback.init();
 
     ui.init();
     // screenAbout is initialized inside UIManager::init() — do not double-init
     screenFilamentSelect.init();
     Serial.println("UI Initialized");
+    Serial.printf("Mem[ui]:         heap=%u  psram=%u  minHeap=%u\n",
+                  ESP.getFreeHeap(), ESP.getFreePsram(), ESP.getMinFreeHeap());
 }
 
 // --- Background RFID Task ---
@@ -187,6 +204,15 @@ void loop() {
     lv_timer_handler();
     network.process();
     rfid_task(); // 🟢 Run the auto-detection task
+
+    // Update status bar (battery placeholder + WiFi) every 2 seconds
+    static uint32_t last_status_ms = 0;
+    if (now - last_status_ms >= 2000) {
+        bool wifiOk = network.isConnected();
+        int8_t rssi  = wifiOk ? (int8_t)WiFi.RSSI() : 0;
+        ui.updateStatusBar(wifiOk, rssi, wifiOk ? WiFi.SSID().c_str() : nullptr);
+        last_status_ms = now;
+    }
 
     // If we are in WiFi Config state and just connected, wrap up and return to settings
     if (sysState.getCurrentState() == SystemState::WIFI_CONFIG && network.isConnected()) {

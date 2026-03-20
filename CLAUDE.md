@@ -39,7 +39,7 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 | **RFID** | `src/rfid_driver.cpp`, `include/rfid_driver.h` | PN532 driver; Key A derivation from UID; `readCFSTag()`/`writeCFSTag()` |
 | **UIManager** | `src/ui/ui_manager.cpp` | Screen management, event handling, `currentSpool`, color picker, `updateDashboardFromSpool()` |
 | **Screens** | `src/ui/screens/screen_*.cpp` | Main (3-region layout), Library (filament grid), Settings, About, Filament Select |
-| **Config** | `src/config_manager.cpp` | Persistent config (beep, brightness, WiFi) via LittleFS `config.json` |
+| **Config** | `src/config_manager.cpp` | Persistent config (beep, WiFi) via LittleFS `config.json` |
 | **Network** | `src/network_manager.cpp` | WiFiManager portal, filament DB updates |
 | **State** | `src/system_state.cpp` | SystemState/SystemEvent enums with StateMachine transitions |
 
@@ -78,7 +78,7 @@ Entire string uppercased. Brand and filament name are **not stored** on tag. `Sp
 Sectors 0-15, 4 blocks/sector, 16 bytes/block. Key A derived from UID. Sectors 1-4 immutable (magic, identity, color, vendor), sector 5 write-once (initial weight), sectors 6-8 mutable mirrors (remaining filament), sector 9 usage counters, sector 15 CRC32. Full spec: `docs/rfid/creality-k2plus-rfid-spec.md`.
 
 ### App config (`config.json` on LittleFS)
-JSON with `beep_enabled`, brightness, WiFi SSID. Managed by `ConfigManager`.
+JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
 
 ## Key Conventions
 

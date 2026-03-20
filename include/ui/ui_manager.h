@@ -53,6 +53,7 @@ public:
     void showRfidRawScreen();
 
     void updateDashboardFromSpool(const SpoolData& data);
+    void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
 
     // P1.9: Operation lock & UI guards (FSD Section 12.5)
     void updateButtonStates();  // Enable/disable buttons based on sysState

@@ -11,7 +11,10 @@
 #include <Arduino.h>
 #include "esp_chip_info.h"
 #include <LittleFS.h>
+#include <WiFi.h>
 #include "board_pins.h"
+#include "network_manager.h"
+#include "rfid_driver.h"
 
 ScreenAbout screenAbout;
 
@@ -71,14 +74,16 @@ void ScreenAbout::init() {
         return lbl;
     };
 
-    labelBoard    = makeLabel(infoContainer);
-    labelDisplay  = makeLabel(infoContainer);
-    labelRFID     = makeLabel(infoContainer);
-    labelFWInfo   = makeLabel(infoContainer);
-    labelChipInfo = makeLabel(infoContainer);
-    labelMemInfo  = makeLabel(infoContainer);
-    labelFlashInfo = makeLabel(infoContainer);
+    labelBoard       = makeLabel(infoContainer);
+    labelDisplay     = makeLabel(infoContainer);
+    labelRFID        = makeLabel(infoContainer);
+    labelRFIDLive    = makeLabel(infoContainer);
+    labelFWInfo      = makeLabel(infoContainer);
+    labelChipInfo    = makeLabel(infoContainer);
+    labelMemInfo     = makeLabel(infoContainer);
+    labelFlashInfo   = makeLabel(infoContainer);
     labelStorageInfo = makeLabel(infoContainer);
+    labelWifiStatus  = makeLabel(infoContainer);
 
 }
 
@@ -119,9 +124,10 @@ void ScreenAbout::show() {
         chip_info.revision, chip_info.cores);
 
     // --- Memory ---
+    uint32_t psram_free_kb = ESP.getFreePsram() / 1024;
     lv_label_set_text_fmt(labelMemInfo,
-        LV_SYMBOL_REFRESH "  PSRAM %luMB OPI  |  Heap free %luKB",
-        (unsigned long)psram_mb, (unsigned long)heap_kb);
+        LV_SYMBOL_REFRESH "  PSRAM %luMB OPI (free %luKB)  |  Heap free %luKB",
+        (unsigned long)psram_mb, (unsigned long)psram_free_kb, (unsigned long)heap_kb);
 
     // --- Flash ---
     lv_label_set_text_fmt(labelFlashInfo,
@@ -137,6 +143,33 @@ void ScreenAbout::show() {
     } else {
         lv_label_set_text(labelStorageInfo,
             LV_SYMBOL_DIRECTORY "  LittleFS: not mounted");
+    }
+
+    // --- Live WiFi status ---
+    if (network.isConnected()) {
+        String ssid = WiFi.SSID();
+        String ip   = WiFi.localIP().toString();
+        lv_label_set_text_fmt(labelWifiStatus,
+            LV_SYMBOL_WIFI "  WiFi: %s  |  IP: %s",
+            ssid.c_str(), ip.c_str());
+        lv_obj_set_style_text_color(labelWifiStatus, lv_color_hex(0x44DD88), 0);
+    } else {
+        lv_label_set_text(labelWifiStatus, LV_SYMBOL_WIFI "  WiFi: Not connected");
+        lv_obj_set_style_text_color(labelWifiStatus, lv_color_hex(0xDD4444), 0);
+    }
+
+    // --- Live RFID status ---
+    uint32_t rfid_ver = rfid.getFirmwareVersion();
+    if (rfid_ver > 0) {
+        lv_label_set_text_fmt(labelRFIDLive,
+            LV_SYMBOL_CHARGE "  RFID: PN532 OK  |  IC=0x%02lX  ver=%lu.%lu",
+            (unsigned long)((rfid_ver >> 24) & 0xFF),
+            (unsigned long)((rfid_ver >> 16) & 0xFF),
+            (unsigned long)((rfid_ver >>  8) & 0xFF));
+        lv_obj_set_style_text_color(labelRFIDLive, lv_color_hex(0x44DD88), 0);
+    } else {
+        lv_label_set_text(labelRFIDLive, LV_SYMBOL_CHARGE "  RFID: PN532 not found");
+        lv_obj_set_style_text_color(labelRFIDLive, lv_color_hex(0xDD4444), 0);
     }
 
     lv_screen_load_anim(screen, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);

@@ -104,6 +104,9 @@ public:
     // Get last decoded CFS payload string (40-char uppercase ASCII, shown in table)
     const char* getLastPayload() const;
 
+    // Get mirror result from the last readCFSTag() call (sectors 6-8, remaining filament)
+    const MirrorResult& getLastMirrors() const;
+
 private:
     Adafruit_PN532* nfc;
 
