@@ -13,9 +13,9 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 
 ### 2.1 Hardware Platform
 
-  **Waveshare ESP32-S3 Touch LCD 4.3" — Development Board (4.3)**
+  **Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3" (SKU: E32S3RGB43)**
 
-  > **Board variant note:** This project targets the **development board** (ESP32-S3-LCD-4.3), which has RS-485, CAN bus, and a USB host switch but **no audio subsystem, no RTC, and no optocoupler-isolated I/O**. A production/4.3C variant (AI Voice model with audio, RTC, optocouplers) exists but is not the target hardware. See the comparison table at the end of this section for differences. Schematics: `docs/hardware/dev-board-4.3/ESP32-S3-Touch-LCD-4.3-Sch.pdf` (dev), `docs/hardware/production-board-4.3C/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf` (production).
+  > **Board migration note:** The original Waveshare ESP32-S3 Touch LCD 4.3" development board was retired due to a CH422G / PN532 I2C address collision (CH422G occupies 0x20–0x27/0x30–0x3F, conflicting with PN532's hardwired 0x24). The project migrated to the Makerfabs MaTouch board, which has no CH422G expander and provides a clean I2C path to the PN532 via its Mabee I2C port (GPIO17/18). See `docs/CHECKPOINT.md` and `docs/board-variant-4.3C.md` for the full history. Product page: https://www.makerfabs.com/esp32-s3-parallel-tft-with-touch-4-3-inch.html
 
   **MCU**
 

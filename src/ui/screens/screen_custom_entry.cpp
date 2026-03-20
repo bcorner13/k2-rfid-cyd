@@ -91,6 +91,13 @@ static lv_obj_t* createReviewRow(lv_obj_t* parent, const char* key) {
 }
 
 void ScreenCustomEntry::init() {
+    _initialized = false;
+    screen = nullptr;
+}
+
+void ScreenCustomEntry::_lazyInit() {
+    if (_initialized) return;
+    _initialized = true;
     screen = lv_obj_create(nullptr);
     lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
@@ -533,6 +540,7 @@ void ScreenCustomEntry::populateReview() {
 }
 
 void ScreenCustomEntry::reset() {
+    _lazyInit();
     lv_textarea_set_text(taBrand, "");
     lv_textarea_set_text(taName, "");
     lv_dropdown_set_selected(ddMaterial, 0);
@@ -552,5 +560,6 @@ void ScreenCustomEntry::reset() {
 }
 
 void ScreenCustomEntry::show() {
+    _lazyInit();
     lv_screen_load_anim(screen, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
 }

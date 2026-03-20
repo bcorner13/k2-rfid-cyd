@@ -37,7 +37,6 @@ void ConfigManager::load() {
     data.beep_enabled = doc["beep"] | true;
     data.write_empty_only = doc["write_empty"] | true;
     data.clone_serial = doc["clone_serial"] | false;
-    data.brightness = doc["brightness"] | 255;
     data.printer_ip = doc["printer_ip"] | "192.168.1.100";
 
     // P1.10: DB update metadata
@@ -53,7 +52,6 @@ void ConfigManager::save() {
     doc["beep"] = data.beep_enabled;
     doc["write_empty"] = data.write_empty_only;
     doc["clone_serial"] = data.clone_serial;
-    doc["brightness"] = data.brightness;
     doc["printer_ip"] = data.printer_ip;
 
     // P1.10: DB update metadata

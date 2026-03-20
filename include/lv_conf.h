@@ -6,48 +6,31 @@
 #define LV_USE_LOG 1
 #define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
 
-#define LV_TICK_CUSTOM 1
-#define LV_TICK_CUSTOM_INCLUDE "Arduino.h"
-#define LV_TICK_CUSTOM_SYS_TIME_EXPR (millis())
-
-/* Memory manager configuration */
-#define LV_MEM_CUSTOM 0
-#define LV_MEM_SIZE (128U * 1024U) // 128KB
-#define LV_MEM_ADR 0
-#define LV_MEM_BUF_MAX_NUM 16
+/* Memory manager — LVGL 9.5 API.
+ * LV_STDLIB_CLIB (1): use standard malloc/free/realloc from the system heap.
+ * On ESP32 Arduino this gives ~200KB+ of dynamic heap instead of LVGL's
+ * default 64KB built-in pool. Display buffer is still PSRAM via heap_caps_malloc
+ * in lvgl_display.cpp. The old LV_MEM_CUSTOM block is unused in LVGL 9.x. */
+#define LV_USE_STDLIB_MALLOC 1  /* LV_STDLIB_CLIB */
 
 /* Hardware and Driver configuration */
-#define LV_DISP_DEF_REFR_PERIOD 30      /*[ms]*/
-#define LV_INDEV_DEF_READ_PERIOD 80     /*[ms] - higher = less touch sampling, can reduce jitter */
-#define LV_DPI_DEF 130     /*[px/inch]*/
-
-/* Drawing configuration */
-#define LV_DRAW_COMPLEX 1
-#define LV_SHADOW_CACHE_SIZE 0
-#define LV_IMG_CACHE_DEF_SIZE 0
+#define LV_DEF_REFR_PERIOD  30      /*[ms]*/
+#define LV_DPI_DEF 130              /*[px/inch]*/
 
 /* Font configuration */
 #define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_18 1
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_MONTSERRAT_32 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
-/* Other feature configurations */
-#define LV_USE_GPU_STM32_DMA2D 0
-#define LV_USE_GPU_NXP_PXP 0
-#define LV_USE_GPU_NXP_VG_LITE 0
-#define LV_USE_GPU_SDL 0
-
+/* Widget / feature flags */
 #define LV_USE_GRID 1
 #define LV_USE_FLEX 1
 #define LV_USE_SNAPSHOT 1
 #define LV_USE_OBSERVER 1
-#define LV_USE_EVENT 1
 #define LV_USE_ASSERT_NULL 1
 #define LV_USE_ASSERT_MALLOC 1
-/* New LVGL9 options */
-#define LV_USE_DISPLAY 1
-#define LV_USE_DRAW_BUF 1

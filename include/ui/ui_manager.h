@@ -17,6 +17,8 @@
 #include "screens/screen_inventory.h"
 #include "screens/screen_spool_detail.h"
 #include "screens/screen_custom_entry.h"
+#include "screens/screen_wifi.h"
+#include "screens/screen_rfid_raw.h"
 #include "spool_data.h"
 #include "system_state.h"
 
@@ -33,6 +35,8 @@ public:
     ScreenInventory screenInventory;
     ScreenSpoolDetail screenSpoolDetail;
     ScreenCustomEntry screenCustomEntry;
+    ScreenWifi screenWifi;
+    ScreenRfidRaw screenRfidRaw;
 
     SpoolData currentSpool;
 
@@ -45,13 +49,16 @@ public:
     void showInventoryScreen();
     void showSpoolDetail(const String& spool_id);
     void showCustomEntry();
+    void showWifiScreen();
+    void showRfidRawScreen();
+
+    void updateDashboardFromSpool(const SpoolData& data);
+    void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
 
     // P1.9: Operation lock & UI guards (FSD Section 12.5)
     void updateButtonStates();  // Enable/disable buttons based on sysState
 
 private:
-    void updateDashboardFromSpool(const SpoolData& data);
-
     // P1.9: Guard check — returns true if system is busy (not IDLE)
     static bool isSystemBusy();
 

@@ -98,6 +98,15 @@ public:
     // P0.7: Read version + check v2 origin magic from sector 10
     TagVersionInfo readTagVersionInfo();
 
+    // Get last CFS raw dump string (full hex log, shown on RFID Raw screen)
+    const char* getLastRawDump() const;
+
+    // Get last decoded CFS payload string (40-char uppercase ASCII, shown in table)
+    const char* getLastPayload() const;
+
+    // Get mirror result from the last readCFSTag() call (sectors 6-8, remaining filament)
+    const MirrorResult& getLastMirrors() const;
+
 private:
     Adafruit_PN532* nfc;
 

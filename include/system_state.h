@@ -19,6 +19,7 @@ enum class SystemState {
 
     // Network operations
     UPDATING_DATABASE,
+    WIFI_CONFIG,
 
     // System states
     ERROR,
@@ -48,6 +49,7 @@ enum class SystemEvent {
     DB_UPDATE_REQUEST,
     DB_UPDATE_SUCCESS,
     DB_UPDATE_FAILED,
+    WIFI_CONFIG_REQUEST,
 
     // Error recovery
     USER_DISMISS,
@@ -84,9 +86,14 @@ public:
     // Check if system is busy (not IDLE)
     bool isBusy() const { return currentState != SystemState::IDLE; }
 
+    // Call every loop() iteration; fires TIMEOUT if auto_dismiss_ms has elapsed.
+    // Returns true if a TIMEOUT transition to IDLE just occurred (caller should refresh UI).
+    bool tick();
+
 private:
     SystemState currentState;
     ErrorContext _errorCtx;
+    uint32_t _errorEnteredMs = 0;
     void transitionTo(SystemState newState);
 };
 

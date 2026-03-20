@@ -27,6 +27,7 @@ const char* StateMachine::getStateName() const {
         case SystemState::EDITING_SPOOL:      return "EDITING";
         case SystemState::CUSTOM_ENTRY:       return "CUSTOM ENTRY";
         case SystemState::UPDATING_DATABASE:  return "UPDATING DB";
+        case SystemState::WIFI_CONFIG:        return "WIFI CONFIG";
         case SystemState::ERROR:              return "ERROR";
         case SystemState::LOW_BATTERY:        return "LOW BATT";
         case SystemState::SLEEP:              return "SLEEP";
@@ -39,7 +40,16 @@ void StateMachine::enterError(const String& message, uint16_t autoDismissMs, boo
     _errorCtx.message = message;
     _errorCtx.auto_dismiss_ms = autoDismissMs;
     _errorCtx.retryable = retryable;
+    _errorEnteredMs = millis();
     transitionTo(SystemState::ERROR);
+}
+
+bool StateMachine::tick() {
+    if (currentState != SystemState::ERROR) return false;
+    if (_errorCtx.auto_dismiss_ms == 0) return false;
+    if (millis() - _errorEnteredMs < _errorCtx.auto_dismiss_ms) return false;
+    handleEvent(SystemEvent::TIMEOUT);
+    return true;
 }
 
 void StateMachine::transitionTo(SystemState newState) {
@@ -75,12 +85,22 @@ void StateMachine::handleEvent(SystemEvent event) {
                 case SystemEvent::DB_UPDATE_REQUEST:
                     transitionTo(SystemState::UPDATING_DATABASE);
                     break;
+                case SystemEvent::WIFI_CONFIG_REQUEST:
+                    transitionTo(SystemState::WIFI_CONFIG);
+                    break;
                 case SystemEvent::BATTERY_CRITICAL:
                     transitionTo(SystemState::LOW_BATTERY);
                     break;
                 default:
                     break;
             }
+            break;
+
+        case SystemState::WIFI_CONFIG:
+            if (event == SystemEvent::OPERATION_SUCCESS || event == SystemEvent::USER_DISMISS)
+                transitionTo(SystemState::IDLE);
+            else if (event == SystemEvent::OPERATION_FAILED)
+                enterError("WiFi config failed", 0, true);
             break;
 
         case SystemState::SCANNING_INVENTORY:

@@ -51,10 +51,16 @@ void ScreenSettings::init() {
     lv_obj_set_align(lUp, LV_ALIGN_CENTER); // Changed from lv_obj_center
 
     // Reset WiFi Button
+    btnSetupWifi = lv_btn_create(cont);
+    lv_obj_set_size(btnSetupWifi, 300, 50);
+    lv_obj_t* lWifiSet = lv_label_create(btnSetupWifi);
+    lv_label_set_text(lWifiSet, "Setup WiFi");
+    lv_obj_set_align(lWifiSet, LV_ALIGN_CENTER);
+
     btnResetWifi = lv_btn_create(cont);
     lv_obj_set_size(btnResetWifi, 300, 50);
     lv_obj_t* lWifi = lv_label_create(btnResetWifi);
-    lv_label_set_text(lWifi, "Reset WiFi");
+    lv_label_set_text(lWifi, "Reset WiFi (Clear)");
     lv_obj_set_align(lWifi, LV_ALIGN_CENTER); // Changed from lv_obj_center
 
     // About Button
@@ -62,7 +68,14 @@ void ScreenSettings::init() {
     lv_obj_set_size(btnAbout, 300, 50);
     lv_obj_t* lAbout = lv_label_create(btnAbout);
     lv_label_set_text(lAbout, "About");
-    lv_obj_set_align(lAbout, LV_ALIGN_CENTER); // Changed from lv_obj_center
+    lv_obj_set_align(lAbout, LV_ALIGN_CENTER);
+
+    // RFID Raw Log Button
+    btnRfidRaw = lv_btn_create(cont);
+    lv_obj_set_size(btnRfidRaw, 300, 50);
+    lv_obj_t* lRfidRaw = lv_label_create(btnRfidRaw);
+    lv_label_set_text(lRfidRaw, LV_SYMBOL_WIFI "  RFID Raw Log");
+    lv_obj_set_align(lRfidRaw, LV_ALIGN_CENTER);
 
     // Restart Button
     btnRestart = lv_btn_create(cont);

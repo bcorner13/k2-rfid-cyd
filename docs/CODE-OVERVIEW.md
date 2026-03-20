@@ -10,7 +10,7 @@ High-level map of modules and data flow for K2-RFID-CYD. For in-code details, se
 |------|------|
 | `src/main.cpp` | `setup()`: Serial, LVGL display init, FilamentDB init, config, UIManager; `loop()`: `lv_timer_handler()`, `ui.update()`. |
 | `src/lvgl_display.cpp` | LovyanGFX + LVGL 9 init, display driver, input (touch). |
-| `include/LGFX_Config.h` | Panel/bus/touch config for 4.3 dev board (RGB, GT911). Works on 4.3C too — same display bus. |
+| `include/LGFX_Config.h` | Panel/bus/touch config for MaTouch 4.3" (ST7262, 16-bit parallel RGB, GT911). Pin assignments match Makerfabs schematic — DE=40, VSYNC=41, HSYNC=39, PCLK=42; touch SDA=17, SCL=18, RST=38. |
 
 ---
 
@@ -28,8 +28,12 @@ High-level map of modules and data flow for K2-RFID-CYD. For in-code details, se
 
 | File | Role |
 |------|------|
-| `include/rfid_driver.h` / `src/rfid_driver.cpp` | **RFIDDriver**: PN532, Key A derivation, `readCFSTag(SpoolData&)`, `writeCFSTag(const SpoolData&)`. |
+| `include/rfid_driver.h` / `src/rfid_driver.cpp` | **RFIDDriver**: PN532 via **I2C** (GPIO17=SDA, GPIO18=SCL — Mabee I2C port, shared with GT911 and PCF8563 RTC). Key A derivation, `readCFSTag(SpoolData&)`, `writeCFSTag(const SpoolData&)`. |
 | `docs/rfid/creality-k2plus-rfid-spec.md` | CFS tag layout and sector usage. |
+
+> **Hardware connection:** PN532 DIP switch S1=ON / S2=OFF (I2C mode). Grove-to-DuPont adapter from Mabee I2C port to PN532 SDA/SCL/3V3/GND. I2C address 0x24 — no conflict with GT911 (0x14/0x5D) or PCF8563 (0x51).
+>
+> **Note:** `rfid_driver.cpp` has been reverted from SPI mode (Waveshare workaround) to I2C mode for the MaTouch board.
 
 ---
 

@@ -75,6 +75,38 @@ struct SpoolData {
         _materialBatch = spooldata.substr(9, 2);
         _materialType = trim_copy(spooldata.substr(12, 5));
 
+        // Map known vendor codes to brand names used in the DB / UI brand dropdown.
+        // 0276 = Creality (confirmed). Unknown vendors fall back to "Generic" (index 0).
+        if (_materialVendor == "0276") _brandName = "Creality";
+
+        // Creality CFS tags store a numeric material-type code (e.g. "01001")
+        // rather than the alphabetic abbreviation used in the DB and UI dropdowns.
+        // Map known codes → alphabetic names so the dashboard dropdown matches.
+        static const struct { const char* code; const char* name; } kTypeMap[] = {
+            { "00001", "PLA"     }, { "00002", "PLA"     }, { "00003", "PETG"    },
+            { "00004", "ABS"     }, { "00005", "TPU"     }, { "00006", "PLA-CF"  },
+            { "00007", "ASA"     }, { "00008", "PA"      }, { "00009", "PA-CF"   },
+            { "00010", "BVOH"    }, { "00011", "PVA"     }, { "00012", "HIPS"    },
+            { "00013", "PET-CF"  }, { "00014", "PETG-CF" }, { "00015", "PA6-CF"  },
+            { "00016", "PAHT-CF" }, { "00017", "PPS"     }, { "00018", "PPS-CF"  },
+            { "00019", "PP"      }, { "00020", "PET"     }, { "00021", "PC"      },
+            { "00022", "PA-CF"   }, { "00023", "PA"      }, { "00024", "PLA"     },
+            { "00025", "PA-CF"   }, { "00026", "TPU"     }, { "00027", "PETG-GF" },
+            { "00031", "PP-CF"   }, { "00032", "PCTG"    }, { "00033", "ASA-CF"  },
+            { "00034", "PA-GF"   }, { "00035", "PLA"     },
+            { "01001", "PLA"     }, { "01601", "PLA"     }, { "02001", "PLA-CF"  },
+            { "03001", "ABS"     }, { "04001", "PLA"     }, { "05001", "PLA"     },
+            { "06001", "PETG"    }, { "06002", "PETG"    }, { "07001", "ABS"     },
+            { "07002", "PC"      }, { "08001", "PLA"     }, { "09001", "PLA"     },
+            { "09002", "PLA"     }, { "10001", "TPU"     }, { "11001", "PA"      },
+            { "12002", "PA-CF"   }, { "12003", "PA-CF"   }, { "13001", "PLA"     },
+            { "14001", "PLA"     }, { "15001", "PLA"     }, { "16001", "TPU"     },
+            { "17001", "PLA"     }, { "18001", "PLA"     }, { "19001", "ASA"     },
+        };
+        for (const auto& m : kTypeMap) {
+            if (_materialType == m.code) { _materialType = m.name; break; }
+        }
+
         try {
             _materialColorNumeric = std::stoi(spooldata.substr(18, 6), nullptr, 16);
         } catch (...) { _materialColorNumeric = 0; }
