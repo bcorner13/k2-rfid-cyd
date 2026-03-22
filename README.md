@@ -2,8 +2,8 @@
 
 Standalone RFID programmer for Creality K2 Plus CFS (Creality Filament System).
 
-## 🚀 Status: Migration Complete (2026-03-10)
-Successfully migrated from the Waveshare board to the **Makerfabs MaTouch ESP32-S3 4.3" V3.1**. The system is stable, WiFi is functional, and RFID auto-detection is implemented.
+## 🚀 Status: Milestone 1 Complete (2026-03-20)
+All 9 hardware-observed bugs fixed on the **Makerfabs MaTouch ESP32-S3 4.3" V3.1**. RFID reads real Creality spools reliably, audio feedback is active, splash screen shows live WiFi status, and the UI has no lockout paths.
 
 ## 🛠 Hardware
 - **MCU:** ESP32-S3 (16MB Flash, 8MB PSRAM)

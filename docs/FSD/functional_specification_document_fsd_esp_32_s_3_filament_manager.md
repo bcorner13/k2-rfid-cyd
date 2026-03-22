@@ -26,42 +26,29 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 
   **Display**
 
-  - **800x480 RGB LCD** — 16-bit parallel bus (RGB565)
+  - **800x480 RGB LCD** — 16-bit parallel bus (RGB565), panel IC: HX8664/HX8264
   - Driven by **LovyanGFX** via LGFX_Config.h
   - Pixel clock: 12 MHz (lowered from default to reduce jitter)
-  - Data pins: D0–D15 on specific GPIOs; HSYNC=GPIO46, VSYNC=GPIO3, PCLK=GPIO7, HENABLE=GPIO5
-  - Backlight driver: **MP3302DJ-LF-Z** LED driver, controlled by **DISP** signal (EXIO2 via CH422G)
+  - Pin map: DE=GPIO40, VSYNC=GPIO41, HSYNC=GPIO39, PCLK=GPIO42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1
+  - Backlight: hardware always-on on V2.0/V3.1 (GPIO2 PWM available on V1.3 only)
 
   **Touch**
 
   - **GT911** capacitive touch controller
-  - I2C address 0x5D on shared bus (GPIO8=SDA, GPIO9=SCL, GPIO4=IRQ)
-  - Reset via **EXIO1** (CTP_RST) on CH422G
+  - I2C address 0x14/0x5D on shared bus (GPIO17=SDA, GPIO18=SCL)
+  - Touch reset: GPIO38. Touch INT: not connected.
 
-  **I2C Expander**
+  **I2C Bus**
 
-  - **CH422G (U10)** — I2C I/O expander on same bus (GPIO8/9)
-  - Uses fixed 8-bit command addresses (not standard 7-bit I2C addressing): 0x70 (OC output), 0x38 (push-pull output), 0x48 (set mode), 0x4D (read input)
-  - Provides 8 bidirectional I/O pins (IO0-IO7 = EXIO0-EXIO7) and **4 general-purpose output pins (OC0-OC3)** — push-pull or open-drain selectable
+  - Shared bus: GPIO17 (SDA) / GPIO18 (SCL)
+  - Devices: GT911 (0x14/0x5D), PCF8563 RTC (0x51), PN532 RFID (0x24) — no conflicts
+  - **No I2C expander** — MaTouch board has no CH422G. All I/O is direct GPIO.
 
-  **CH422G EXIO Pin Assignments (development board):**
-
-  | EXIO Pin | Net Name | Function |
-  |----------|----------|----------|
-  | EXIO0 | — | Unused / available |
-  | EXIO1 | CTP_RST | Touch reset — pulse LOW→HIGH on boot |
-  | EXIO2 | DISP | Display enable (backlight on/off via MP3302DJ) |
-  | EXIO3 | LCD_RST | LCD panel reset |
-  | EXIO4 | SDCS | SD card chip select |
-  | EXIO5 | USB_SEL | USB host switch (FSUSB42UMX) — selects USB-JTAG vs USB host |
-
-  **CH422G OC Output Pins (development board):**
-
-  The CH422G has 4 additional output-only pins (OC0-OC3) that are separate from the 8 EXIO bidirectional pins. These can be push-pull or open-drain (selectable via set-mode command). On the dev board, OC0-OC3 are available for general-purpose output — used for feedback hardware (buzzer/LEDs).
+  > **Historical note (retired Waveshare board):** The original Waveshare ESP32-S3-Touch-LCD-4.3 used a CH422G I/O expander (I2C addresses 0x20–0x27 / 0x30–0x3F) on GPIO8/9 for backlight (DISP via EXIO2), touch reset (CTP_RST via EXIO1), SD CS (EXIO4), and feedback hardware (OC0-OC3). This board was retired due to CH422G colliding with PN532's hardwired I2C address 0x24. See `docs/CHECKPOINT.md` for the full migration history.
 
   | OC Pin | CH422G Physical Pin | Available | Notes |
   |--------|-------------------|-----------|-------|
-  | OC0 | Pin 8 | Yes | General-purpose output |
+  | OC0 | Pin 8 | Yes | General-purpose output (historical — Waveshare only) |
   | OC1 | Pin 9 | Yes | General-purpose output |
   | OC2 | Pin 10 | Yes | General-purpose output |
   | OC3 | Pin 11 | Yes | General-purpose output |
@@ -168,76 +155,40 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   - **K1** — RESET button (pulls RESET low via R38 10K)
   - **K2** — BOOT/IO0 button (pulls IO0 low for flash mode via R39 10K)
 
-  **I2C Bus Summary (IO8=SDA, IO9=SCL)**
+  **I2C Bus Summary (GPIO17=SDA, GPIO18=SCL)**
 
-  All I2C peripherals share a single bus with 4.7K pull-ups (R100, R101) to I2C_VCC:
+  All I2C peripherals share a single bus. No address conflicts:
 
   | Device | I2C Address | Function |
   |--------|-------------|----------|
-  | GT911 | 0x5D | Capacitive touch controller |
-  | CH422G (U10) | Fixed command bytes (0x70, 0x48, 0x4D, etc.) | I/O expander (EXIO0-7 + OC0-3) |
-  | PN532 (external) | 0x24 | NFC/RFID reader/writer |
+  | GT911 | 0x14 / 0x5D | Capacitive touch controller |
+  | PCF8563 | 0x51 | Onboard RTC |
+  | PN532 (external) | 0x24 | NFC/RFID reader/writer (Mabee I2C port) |
 
-  > **Note:** The dev board has only 3 I2C devices (vs 6 on production 4.3C). No RTC, no audio codecs. The CH422G address overlap note still applies: the 7-bit equivalent of command byte 0x48 is 0x24 (same as PN532). In practice this has not caused bus conflicts because the CH422G command protocol differs from standard I2C register access, but if issues arise, the PN532 V3 module supports SPI mode as an alternative. For I2C bus lockup detection, timeout handling, and SCL pulse recovery procedures, see Section 13.7.
+  For I2C bus lockup detection, timeout handling, and SCL pulse recovery procedures, see Section 13.7.
 
-  **Timestamps (no RTC)**
+  **Timestamps (RTC onboard)**
 
-  The development board does **not** have an RTC. Timestamps for inventory weight history and spool creation dates require one of:
-  - **NTP via WiFi** — accurate when connected; unavailable offline
-  - **Relative uptime** — `millis()` since boot; resets on power cycle
-  - **Manual date entry** — user sets date/time in Settings screen on first boot; stored in config, drifts without RTC
-
-  For initial implementation, NTP is preferred when WiFi is available, with relative timestamps as fallback. Timestamp accuracy is non-critical — weight history entries are informational, not safety-critical.
+  The MaTouch V3.1 has an onboard **PCF8563 RTC** (I2C 0x51). Use for timestamps on inventory weight history and spool creation. NTP via WiFi provides initial time sync; PCF8563 maintains it across power cycles.
 
   **USB**
 
-  - Two USB-C ports: **USB-JTAG** (Type_C1) and **UART** (Type_C2, via CH343P USB-to-UART)
+  - Two USB-C ports: **USB-JTAG** and **UART** (via CH343P USB-to-UART)
   - UART port used for upload/monitor (more stable)
   - `ARDUINO_USB_CDC_ON_BOOT=0` (CDC disabled, using hardware UART)
-  - USB host switch (FSUSB42UMX) on EXIO5 — not used
 
   **Connectivity**
 
-  - WiFi (via WiFiManager, currently disabled in code)
+  - WiFi (via WiFiManager — active and functional)
   - BLE (available but unused)
 
   **Board Definition**
 
-  - Custom PlatformIO board: boards/waveshare_s3_43.json
-  - Waveshare wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4.3
-  - Development board schematic: `docs/hardware/dev-board-4.3/ESP32-S3-Touch-LCD-4.3-Sch.pdf`
-  - Production board schematic: `docs/hardware/production-board-4.3C/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf`
-  - Chip datasheets: `docs/hardware/datasheets/` (CH422G, GT911, ST7262, TJA1051, CH343)
+  - Custom PlatformIO board: `boards/matouch_s3_43.json`
+  - Makerfabs product page: https://www.makerfabs.com/esp32-s3-parallel-tft-with-touch-4-3-inch.html
   - ESP32-S3 docs: `docs/hardware/esp32-s3/` (datasheet, technical reference manual, WROOM module)
-  - Board variant notes: `docs/board-variant-4.3C.md`
 
-  **Development Board vs Production Board (4.3C) Comparison**
-
-  | Feature | Dev Board (4.3) | Production Board (4.3C) |
-  |---------|----------------|------------------------|
-  | **Audio subsystem** | None | ES8311 + ES7210 + NS4150B + dual MEMS mics |
-  | **RTC** | None | PCF85063ATL (I2C 0x51) |
-  | **RS-485** | SP3485 on IO15/IO16 | None |
-  | **CAN bus** | TJA1051T | None |
-  | **USB host switch** | FSUSB42UMX on EXIO5 | None |
-  | **Optocoupler I/O (P1)** | None | 2 inputs (DIN0/DIN1) + 2 outputs (DOUT0/DOUT1) |
-  | **EXIO3 function** | LCD_RST | PA_CTRL (speaker amp enable) |
-  | **EXIO5 function** | USB_SEL | DI1 (digital input) |
-  | **EXIO6 function** | Available / unassigned | DOUT0 (optocoupler output) |
-  | **EXIO7 function** | Available / unassigned | DOUT1 (optocoupler output) |
-  | **EXIO_PWM** | Not connected | Backlight PWM (AP3032 boost driver) |
-  | **EXIO_ADC** | Not connected (use GPIO6 Sensor AD instead) | VBAT sense (voltage divider R18/R19) |
-  | **IO15** | RS485_TXD | I2S_DSDIN (audio DAC data) |
-  | **IO16** | RS485_RXD | I2S_LRCK (audio L/R clock) |
-  | **Backlight driver** | MP3302DJ-LF-Z (DISP on/off) | AP3032 (EXIO_PWM brightness) |
-  | **3.3V regulator** | SGM2212-3.3 (U8) | TMI3112H (U8) |
-  | **USB-to-UART** | CH343P | CH343G (assumed) |
-  | **I2C devices** | 3 (GT911, CH422G, PN532) | 6 (+ PCF85063A, ES8311, ES7210) |
-  | **Sensor/AD input** | Yes (analog header) | No |
-  | **Physical buttons** | K1 (RESET), K2 (IO0/BOOT) | K1 (RESET), K2 (IO0/BOOT) |
-  | **Battery charger** | CS8501 (U2) | CS8501 (U4) |
-
-  > **Porting note:** The codebase and LGFX_Config.h work on both variants — the display bus, touch controller, CH422G init (EXIO1/EXIO2), and SD card are identical. Differences only affect feedback hardware wiring (no P1 header on dev), timestamps (no RTC on dev), and any code that references EXIO3/5/6/7 or audio codecs.
+  > **Historical note (retired Waveshare variants):** The project originally targeted the Waveshare ESP32-S3-Touch-LCD-4.3 (dev board) and its 4.3C production variant. Both used a CH422G I/O expander for backlight, touch reset, and feedback hardware. They were retired in favour of the MaTouch board. See `docs/CHECKPOINT.md` for full details.
 
 ### 2.2 Software Stack
 - **Framework:** Arduino (ESP32 core)
@@ -1818,7 +1769,7 @@ sysState.transition(SystemEvent::WRITE_REQUEST);
 
 ### 13.7 I2C Bus Recovery
 
-The shared I2C bus (IO8=SDA, IO9=SCL) connects multiple devices (dev board: GT911 touch, CH422G expander, PN532 RFID; production 4.3C adds PCF85063A RTC, ES8311 codec, ES7210 ADC). Bus lockups can occur when a device holds SDA low after an interrupted transaction — a common embedded I2C failure mode.
+The shared I2C bus (GPIO17=SDA, GPIO18=SCL) connects GT911 touch (0x14/0x5D), PCF8563 RTC (0x51), and PN532 RFID (0x24). Bus lockups can occur when a device holds SDA low after an interrupted transaction — a common embedded I2C failure mode.
 
 **Timeout Detection**
 
