@@ -1,6 +1,6 @@
 # Code overview
 
-High-level map of modules and data flow for K2-RFID-CYD. For in-code details, see the `@file` / `@brief` comments in the headers listed below.
+High-level map of modules and data flow for K2 RFID Tag Programmer. For in-code details, see the `@file` / `@brief` comments in the headers listed below.
 
 ---
 
@@ -10,7 +10,7 @@ High-level map of modules and data flow for K2-RFID-CYD. For in-code details, se
 |------|------|
 | `src/main.cpp` | `setup()`: Serial, LVGL display init, FilamentDB init, config, UIManager; `loop()`: `lv_timer_handler()`, `ui.update()`. |
 | `src/lvgl_display.cpp` | LovyanGFX + LVGL 9 init, display driver, input (touch). |
-| `include/LGFX_Config.h` | Panel/bus/touch config for MaTouch 4.3" (ST7262, 16-bit parallel RGB, GT911). Pin assignments match Makerfabs schematic — DE=40, VSYNC=41, HSYNC=39, PCLK=42; touch SDA=17, SCL=18, RST=38. |
+| `include/LGFX_Config.h` | Panel/bus/touch config for MaTouch 4.3" (16-bit parallel RGB, GT911). Pin assignments: DE=40, VSYNC=41, HSYNC=39, PCLK=42; touch SDA=17, SCL=18, RST=38. Note: "ST7262" label in older docs was incorrect — the panel uses HX8664/HX8264. |
 
 ---
 
