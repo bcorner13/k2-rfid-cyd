@@ -29,8 +29,8 @@ void setup() {
     Serial.printf("Mem[boot]:    heap=%u  psram=%u  minHeap=%u\n",
                   ESP.getFreeHeap(), ESP.getFreePsram(), ESP.getMinFreeHeap());
 
-    // Initialize WDT early to handle boot load
-    esp_task_wdt_init(10, true);
+    // Initialize WDT early to handle boot load (increased to 20s)
+    esp_task_wdt_init(20, true);
     esp_task_wdt_add(NULL);
 
     // 1. Initialize display and show splash
@@ -39,8 +39,6 @@ void setup() {
     Serial.printf("Mem[display]: heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
 
     // --- Initialize Sound ---
-    // V3.1/V2.0: I2S DAC on GPIO2(LRCLK)/GPIO19(DIN)/GPIO20(BCLK) — onboard SPK connector.
-    // Enabled via -DBOARD_MATOUCH_V2 build flag.
     uiSound.init();
     uiSound.playStartup();
 
@@ -51,20 +49,24 @@ void setup() {
     splash_add_status("Filament DB", false);
 
     // 3. Initialize modules and update status
+    esp_task_wdt_reset();
     network.init();
     bool wifi_triggered = network.connect(); // Try to connect with saved creds
     splash_update_status(0, wifi_triggered ? "Connecting..." : "No Saved WiFi", false);
     
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);  // Makerfabs MaTouch shared I2C bus (GT911 + Mabee/PN532)
+    esp_task_wdt_reset();
 
     // I2C bus scan — shows all responding device addresses
     Serial.println("I2C scan:");
     for (uint8_t addr = 1; addr < 127; addr++) {
+        if (addr % 16 == 0) esp_task_wdt_reset();
         Wire.beginTransmission(addr);
         if (Wire.endTransmission() == 0)
             Serial.printf("  found 0x%02X\n", addr);
     }
     Serial.println("I2C scan done");
+    esp_task_wdt_reset();
 
     rfid.init();
     uint32_t rfid_ver = rfid.getFirmwareVersion();
@@ -72,12 +74,14 @@ void setup() {
     Serial.printf("RFID: %s (ver=0x%08X)\n", rfid_ok ? "OK" : "NOT FOUND", rfid_ver);
     Serial.printf("Mem[rfid]:    heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     splash_update_status(1, rfid_ok ? "Available" : "Not Found", rfid_ok);
+    esp_task_wdt_reset();
 
     // For now, let's assume Bluetooth is available if the code compiles
     splash_update_status(2, "Available", true);
     bool db_ok = filamentDB.init();
     Serial.printf("Mem[filamentDB]: heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     splash_update_status(3, db_ok ? "Loaded" : "Failed", db_ok);
+    esp_task_wdt_reset();
 
     // Show Continue button — all status items are now populated.
     splash_show_continue_button();
@@ -112,6 +116,7 @@ void setup() {
 
     lvgl_display_start_ui();
     Serial.println("LVGL Display Initialized for UI");
+    esp_task_wdt_reset();
 
     sysState.init();
     config.init();
@@ -123,8 +128,6 @@ void setup() {
     // screenAbout is initialized inside UIManager::init() — do not double-init
     screenFilamentSelect.init();
     Serial.println("UI Initialized");
-    Serial.printf("Mem[ui]:         heap=%u  psram=%u  minHeap=%u\n",
-                  ESP.getFreeHeap(), ESP.getFreePsram(), ESP.getMinFreeHeap());
 }
 
 // --- Background RFID Task ---
@@ -159,14 +162,15 @@ void rfid_task() {
             if (rfid.readCFSTag(readSpool)) {
                 Serial.println("RFID: Auto-Read Success");
                 ui.updateDashboardFromSpool(readSpool);
+                ui.screenRfidRaw.populateTable(readSpool.getRawData().c_str()); // Populate Raw Log
                 ui.screenMain.setWriteStatus("Tag Read OK", true, false);
                 feedback.readSuccess();
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
                 last_read_failed = false;
             } else {
-                Serial.println("RFID: Auto-Read failed (Auth/CRC)");
-                ui.screenMain.setWriteStatus("Read failed", false, false);
-                feedback.operationFailed();
+                Serial.println("RFID: Auto-Read failed (Auth/CRC) - retrying silently");
+                ui.screenMain.setWriteStatus("Reading...", false, false);
+                // feedback.operationFailed(); // Removed to prevent annoying double-beeps on placement
                 sysState.handleEvent(SystemEvent::OPERATION_FAILED);
                 last_read_failed = true;
             }

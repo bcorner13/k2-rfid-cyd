@@ -6,12 +6,12 @@ ScreenLibrary screenLibrary;
 
 /* Grid size is driven by filament count from material_database.json (see populate()). */
 static constexpr uint8_t GRID_COLS = 4;
-static constexpr uint16_t GRID_MAX_ROWS = 50;   /* cap: 4*50 = 200 filaments max */
+static constexpr uint16_t GRID_MAX_ROWS = 100;   /* cap: 4*100 = 400 filaments max */
 static lv_coord_t col_dsc[GRID_COLS + 1];
 static lv_coord_t row_dsc[GRID_MAX_ROWS + 1];
 
 /* Button height and visible area; more rows visible with smaller height */
-static const uint16_t BUTTON_HEIGHT = 100;
+static const uint16_t BUTTON_HEIGHT = 70;
 static const uint16_t GRID_VISIBLE_HEIGHT = 420;   /* ~4 rows visible */
 static const uint16_t GRID_MARGIN_H_PX = 10;       /* ~1–2 mm each side at typical DPI */
 
@@ -111,7 +111,7 @@ void ScreenLibrary::populate()
         lv_obj_set_user_data(cell, (void*)i);
         lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
 
-        /* Inner flex row: swatch left (fixed), label right (takes rest) so text never overlaps swatch */
+        /* Inner flex row: swatch left (fixed), text column right (takes rest) */
         lv_obj_t* inner = lv_obj_create(cell);
         lv_obj_set_width(inner, LV_PCT(100));
         lv_obj_set_height(inner, LV_PCT(100));
@@ -121,31 +121,52 @@ void ScreenLibrary::populate()
         lv_obj_set_flex_align(inner, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_bg_opa(inner, LV_OPA_TRANSP, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(inner, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_pad_column(inner, 6, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_column(inner, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_all(inner, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_clear_flag(inner, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_clear_flag(inner, LV_OBJ_FLAG_CLICKABLE);  /* tap goes to cell */
+        lv_obj_clear_flag(inner, LV_OBJ_FLAG_CLICKABLE);
 
         /* Swatch: fixed size on the left */
         lv_obj_t* swatch = lv_obj_create(inner);
-        lv_obj_set_size(swatch, 45, 45);
+        lv_obj_set_size(swatch, 32, 32);
         lv_obj_set_flex_grow(swatch, 0);
         lv_obj_set_style_bg_color(swatch, lv_color_hex(filaments[i].color_hex), LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_opa(swatch, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(swatch, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(swatch, lv_color_hex(0xE0E0E0), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_radius(swatch, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(swatch, 6, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_clear_flag(swatch, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_clear_flag(swatch, LV_OBJ_FLAG_CLICKABLE);  /* tap goes to cell */
+        lv_obj_clear_flag(swatch, LV_OBJ_FLAG_CLICKABLE);
 
-        /* Label: takes remaining space to the right of swatch only */
-        lv_obj_t* label = lv_label_create(inner);
-        String text = filaments[i].brand + " " + filaments[i].name;
-        lv_label_set_text(label, text.c_str());
-        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
-        lv_obj_set_flex_grow(label, 1);
-        lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);  /* tap goes to cell */
+        /* Text container: column for name and brand */
+        lv_obj_t* text_cont = lv_obj_create(inner);
+        lv_obj_set_flex_grow(text_cont, 1);
+        lv_obj_set_height(text_cont, LV_PCT(100));
+        lv_obj_set_style_bg_opa(text_cont, 0, 0);
+        lv_obj_set_style_border_width(text_cont, 0, 0);
+        lv_obj_set_style_pad_all(text_cont, 0, 0);
+        lv_obj_set_layout(text_cont, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(text_cont, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(text_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+        lv_obj_set_style_pad_row(text_cont, 0, 0);
+        lv_obj_clear_flag(text_cont, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(text_cont, LV_OBJ_FLAG_CLICKABLE);
+
+        /* Name label (top row) */
+        lv_obj_t* labelName = lv_label_create(text_cont);
+        lv_label_set_text(labelName, filaments[i].name.c_str());
+        lv_label_set_long_mode(labelName, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(labelName, LV_PCT(100));
+        lv_obj_set_style_text_color(labelName, lv_color_white(), 0);
+        lv_obj_set_style_text_font(labelName, &lv_font_montserrat_14, 0);
+
+        /* Brand label (bottom row, smaller) */
+        lv_obj_t* labelBrand = lv_label_create(text_cont);
+        lv_label_set_text(labelBrand, filaments[i].brand.c_str());
+        lv_label_set_long_mode(labelBrand, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(labelBrand, LV_PCT(100));
+        lv_obj_set_style_text_color(labelBrand, lv_color_hex(0xEEEEEE), 0);
+        lv_obj_set_style_text_font(labelBrand, &lv_font_montserrat_12, 0);
     }
 }
 

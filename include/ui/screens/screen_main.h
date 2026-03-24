@@ -13,7 +13,7 @@ public:
     lv_obj_t* btnSettings;
     lv_obj_t* btnLibrary;
     lv_obj_t* btnWrite;
-    lv_obj_t* btnReadRfid;
+    lv_obj_t* btnInventory;
     lv_obj_t* labelWriteStatus;
     lv_obj_t* sliderWeight;
     lv_obj_t* labelWeight;

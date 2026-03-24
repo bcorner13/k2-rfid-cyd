@@ -42,9 +42,10 @@ High-level map of modules and data flow for K2 RFID Tag Programmer. For in-code 
 | File | Role |
 |------|------|
 | `include/ui/ui_manager.h` / `src/ui/ui_manager.cpp` | **UIManager**: screens, event_handler, currentSpool, color picker, updateDashboardFromSpool. |
-| `include/ui/screens/screen_main.h` | Main screen: **3 regions** — left: color block (tap opens picker); right: brand/type dropdowns, weight slider; bottom: Read, Write, Library, Settings, write-status label. |
-| `include/ui/screens/screen_library.h` | Filament library grid (from FilamentDB cache). |
-| `include/ui/screens/screen_settings.h` | Settings: WiFi, DB update, beep, About, Restart. |
+| include/ui/screens/screen_main.h | Main screen: **3 regions** — left: color block (tap opens picker); right: brand/type dropdowns, weight slider; bottom: Write, Inventory, Library, Settings, status label. |
+| `include/ui/screens/screen_inventory.h` | Inventory screen: scrollable list of spools, scan tag, add custom. |
+| `include/ui/screens/screen_library.h` | Filament library grid (4 columns). |
+| `include/ui/screens/screen_settings.h` | Settings: WiFi, DB update, beep, About, Raw Log, Restart. |
 | `include/ui/screens/screen_about.h` | About screen. |
 | `include/ui/widgets/spool_widget.h` | SpoolWidget (legacy/unused; structure kept for future widgets). |
 
@@ -64,9 +65,10 @@ High-level map of modules and data flow for K2 RFID Tag Programmer. For in-code 
 
 1. **Startup:** LittleFS → FilamentDB loads JSON → cache of FilamentProfile.  
 2. **Library pick:** User taps item in grid → index into `filamentDB.getCache()` → FilamentProfile → SpoolData(profile) → `ui.currentSpool` → `updateDashboardFromSpool()` → main screen updated.  
-3. **Read tag:** User taps Read → `rfid.readCFSTag(spool)` → SpoolData(string) → `updateDashboardFromSpool()` → status "Read OK" or "No tag / Read failed".  
+3. **Auto-Read tag:** Background `rfid_task()` detects tag → `rfid.readCFSTag(spool)` → `updateDashboardFromSpool()` → status "Tag Read OK". Populates `screenRfidRaw` table.
 4. **Write tag:** User taps Write → `rfid.writeCFSTag(ui.currentSpool)` → status "Write OK" or "Write failed".  
-5. **Main screen:** Left: color block (tap opens color picker); right: brand/type dropdowns, weight slider; bottom: Read, Write, Library, Settings, status label.
+5. **Main screen:** Left: color block (tap opens color picker); right: brand/type dropdowns, weight slider; bottom: Write, Inventory, Library, Settings, status label.
+6. **Inventory:** Scan Tag button performs a manual read and reconciles with local inventory JSON.
 
 ---
 

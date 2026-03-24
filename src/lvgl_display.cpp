@@ -115,11 +115,11 @@ void splash_show_continue_button() {
     if (continue_btn) return;  // already created
 
     continue_btn = lv_btn_create(splash_screen);
-    lv_obj_set_size(continue_btn, 200, 50);
-    lv_obj_align(continue_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_size(continue_btn, 80, 50);
+    lv_obj_align(continue_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
 
     lv_obj_t* lbl = lv_label_create(continue_btn);
-    lv_label_set_text(lbl, "Continue");
+    lv_label_set_text(lbl, LV_SYMBOL_RIGHT);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);
     lv_obj_set_align(lbl, LV_ALIGN_CENTER);
 

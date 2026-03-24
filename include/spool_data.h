@@ -56,6 +56,7 @@ struct SpoolData {
 
     // Constructor from Raw RFID String (Reading from Tag)
     explicit SpoolData(const std::string& spooldata_in) {
+        _spooldata = spooldata_in; // 🟢 Store exact original string
         std::string spooldata = spooldata_in;
 
         size_t last_numeric_pos = spooldata.find_last_of("0123456789");
@@ -66,8 +67,7 @@ struct SpoolData {
         }
 
         if (spooldata.length() < 34) {
-            _spooldata = "";
-            return;
+            return; // 🟢 Keep _spooldata but fail parse
         }
 
         _materialDate = spooldata.substr(0, 5);
@@ -94,14 +94,14 @@ struct SpoolData {
             { "00025", "PA-CF"   }, { "00026", "TPU"     }, { "00027", "PETG-GF" },
             { "00031", "PP-CF"   }, { "00032", "PCTG"    }, { "00033", "ASA-CF"  },
             { "00034", "PA-GF"   }, { "00035", "PLA"     },
-            { "01001", "PLA"     }, { "01601", "PLA"     }, { "02001", "PLA-CF"  },
-            { "03001", "ABS"     }, { "04001", "PLA"     }, { "05001", "PLA"     },
-            { "06001", "PETG"    }, { "06002", "PETG"    }, { "07001", "ABS"     },
-            { "07002", "PC"      }, { "08001", "PLA"     }, { "09001", "PLA"     },
-            { "09002", "PLA"     }, { "10001", "TPU"     }, { "11001", "PA"      },
-            { "12002", "PA-CF"   }, { "12003", "PA-CF"   }, { "13001", "PLA"     },
-            { "14001", "PLA"     }, { "15001", "PLA"     }, { "16001", "TPU"     },
-            { "17001", "PLA"     }, { "18001", "PLA"     }, { "19001", "ASA"     },
+            { "01001", "Hyper PLA" }, { "01601", "Hyper PLA" }, { "02001", "PLA-CF"  },
+            { "03001", "Hyper ABS" }, { "04001", "Hyper PLA" }, { "05001", "Hyper PLA" },
+            { "06001", "Hyper PETG" }, { "06002", "Hyper PETG" }, { "07001", "Hyper ABS" },
+            { "07002", "PC"      }, { "08001", "Hyper PLA" }, { "09001", "Hyper PLA" },
+            { "09002", "Hyper PLA" }, { "10001", "TPU"     }, { "11001", "PA"      },
+            { "12002", "PA-CF"   }, { "12003", "PA-CF"   }, { "13001", "Hyper PLA" },
+            { "14001", "Hyper PLA" }, { "15001", "Hyper PLA" }, { "16001", "TPU"     },
+            { "17001", "Hyper PLA" }, { "18001", "Hyper PLA" }, { "19001", "ASA"     },
         };
         for (const auto& m : kTypeMap) {
             if (_materialType == m.code) { _materialType = m.name; break; }

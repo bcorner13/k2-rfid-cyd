@@ -211,31 +211,32 @@ void ScreenMain::init() {
     lv_obj_set_style_pad_all(btnCont, 0, 0);   // clear default 8px LVGL pad; prevents label being clipped
     lv_obj_set_flex_flow(btnCont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btnCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(btnCont, 4, 0);
-    lv_obj_set_width(btnCont, 300);
-
-    btnReadRfid = lv_btn_create(btnCont);
-    lv_obj_set_size(btnReadRfid, 72, 50);
-    lv_obj_t* lRead = lv_label_create(btnReadRfid);
-    lv_label_set_text(lRead, "READ");
-    lv_obj_set_align(lRead, LV_ALIGN_CENTER);
-    lv_obj_set_style_text_font(lRead, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_pad_column(btnCont, 8, 0);
+    lv_obj_set_width(btnCont, 400);
+    lv_obj_set_align(btnCont, LV_ALIGN_BOTTOM_MID);
 
     btnWrite = lv_btn_create(btnCont);
-    lv_obj_set_size(btnWrite, 72, 50);
+    lv_obj_set_size(btnWrite, 80, 50);
     lv_obj_t* lWrite = lv_label_create(btnWrite);
     lv_label_set_text(lWrite, "WRITE");
     lv_obj_set_align(lWrite, LV_ALIGN_CENTER);
     lv_obj_set_style_text_font(lWrite, &lv_font_montserrat_14, 0);
 
+    btnInventory = lv_btn_create(btnCont);
+    lv_obj_set_size(btnInventory, 110, 50);
+    lv_obj_t* lInv = lv_label_create(btnInventory);
+    lv_label_set_text(lInv, "INVENTORY");
+    lv_obj_set_align(lInv, LV_ALIGN_CENTER);
+    lv_obj_set_style_text_font(lInv, &lv_font_montserrat_12, 0);
+
     btnLibrary = lv_btn_create(btnCont);
-    lv_obj_set_size(btnLibrary, 50, 50);
+    lv_obj_set_size(btnLibrary, 60, 50);
     lv_obj_t* lLib = lv_label_create(btnLibrary);
     lv_label_set_text(lLib, LV_SYMBOL_LIST);
     lv_obj_set_align(lLib, LV_ALIGN_CENTER);
 
     btnSettings = lv_btn_create(btnCont);
-    lv_obj_set_size(btnSettings, 50, 50);
+    lv_obj_set_size(btnSettings, 60, 50);
     lv_obj_t* lSet = lv_label_create(btnSettings);
     lv_label_set_text(lSet, LV_SYMBOL_SETTINGS);
     lv_obj_set_align(lSet, LV_ALIGN_CENTER);
