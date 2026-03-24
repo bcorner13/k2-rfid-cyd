@@ -18,6 +18,9 @@ public:
     void init();
     void show();
 
+    /** Populate table row 1 with fields parsed from a 40-char CFS payload. */
+    void populateTable(const char* payload);
+
     lv_obj_t* screen;
     lv_obj_t* btnBack;
 
@@ -27,9 +30,6 @@ private:
 
     /** LVGL draw-task callback — styles header row (row 0) with dark-blue bg + cyan text. */
     static void table_draw_cb(lv_event_t* e);
-
-    /** Populate table row 1 with fields parsed from a 40-char CFS payload. */
-    void populateTable(const char* payload);
 };
 
 extern ScreenRfidRaw screenRfidRaw;

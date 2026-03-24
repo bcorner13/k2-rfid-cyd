@@ -56,9 +56,9 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenMain.labelWriteStatus, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnSettings, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.btnInventory, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenMain.btnReadRfid, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_add_event_cb(screenSettings.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
@@ -120,7 +120,7 @@ void UIManager::updateButtonStates() {
     };
 
     // Main screen: operation buttons disabled when busy
-    setEnabled(screenMain.btnReadRfid, !busy);
+    setEnabled(screenMain.btnInventory, !busy);
     setEnabled(screenMain.btnWrite, !busy);
     setEnabled(screenMain.btnLibrary, !busy);
     setEnabled(screenMain.colorBlock, !busy);
@@ -191,28 +191,12 @@ void UIManager::event_handler(lv_event_t* e) {
             return;
         }
 
-        if (obj == ui.screenMain.btnReadRfid) {
-            Serial.println("UI: Read RFID triggered");
-            sysState.handleEvent(SystemEvent::READ_REQUEST);
-            ui.screenMain.setWriteStatus("Reading...");
-            ui.updateButtonStates();
-
-            SpoolData readSpool;
-            if (rfid.readCFSTag(readSpool)) {
-                Serial.println("UI: Read RFID Success");
-                ui.updateDashboardFromSpool(readSpool);
-                ui.screenMain.setWriteStatus("Read OK", true, false);
-                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
-                feedback.readSuccess();
-            } else {
-                Serial.println("UI: Read RFID Failed (No Tag)");
-                ui.screenMain.setWriteStatus("No tag / Read failed", false, false);
-                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
-                feedback.operationFailed();
-            }
-            ui.updateButtonStates(); // 🟢 Crucial: Refresh buttons after op finished
+        if (obj == ui.screenMain.btnInventory) {
+            ui.showInventoryScreen();
+            return;
         }
-        else if (obj == ui.screenMain.btnWrite) {
+
+        if (obj == ui.screenMain.btnWrite) {
             Serial.println("UI: Write RFID triggered");
             sysState.handleEvent(SystemEvent::WRITE_REQUEST);
             ui.screenMain.setWriteStatus("Writing...");

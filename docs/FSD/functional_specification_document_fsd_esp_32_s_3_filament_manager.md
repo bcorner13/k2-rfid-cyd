@@ -1479,10 +1479,12 @@ WiFi Setup → Settings             (connected / cancelled)
 | Item | Type | Description |
 |------|------|-------------|
 | Beep on R/W | Toggle switch | Enable/disable audible feedback on RFID read/write. Saved to `config.json` immediately on change. |
-| WiFi Setup | Button | Launches WiFiManager captive portal for network configuration (see Section 11.9) |
-| Update Database | Button | Navigates to Update Database screen (Section 11.6). Requires WiFi to be connected. |
-| About | Button | Navigates to About screen (system info, version, credits) |
-| Restart Device | Button | Calls `ESP.restart()` — immediate reboot, no confirmation dialog |
+| Update Database | Button | Navigates to Update Database flow (Section 11.6). Requires WiFi to be connected. |
+| Setup WiFi | Button | Launches WiFiManager captive portal for network configuration (see Section 11.9). |
+| Reset WiFi (Clear) | Button | Clears stored WiFi credentials from NVS and restarts the device. |
+| About | Button | Navigates to About screen (system info, version, credits). |
+| RFID Raw Log | Button | Navigates to the RFID Raw Log screen showing sector-by-sector tag data. |
+| Restart Device | Button | Calls `ESP.restart()` — immediate reboot, no confirmation dialog. |
 
 **Future additions:**
 - Brightness slider (dev board: on/off only via EXIO2/DISP; 4.3C: PWM dimming via EXIO_PWM)

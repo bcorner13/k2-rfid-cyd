@@ -35,10 +35,10 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 |--------|-------|------|
 | **Display** | `src/lvgl_display.cpp`, `include/LGFX_Config.h` | LovyanGFX + LVGL 9 display/touch driver init |
 | **FilamentDB** | `src/filament_db.cpp`, `include/filament_db.h` | Loads `material_database.json` from LittleFS into `std::vector<FilamentProfile>` cache; provides dropdown option strings |
-| **SpoolData** | `include/spool_data.h` | CFS tag payload model; constructs from `FilamentProfile` (write path) or raw tag string (read path); 5-char material type on-tag; brand not stored on tag |
+| **SpoolData** | `include/spool_data.h` | CFS tag payload model; constructs from `FilamentProfile` (write path) or raw tag string (read path); 5-char material type on-tag; maps material codes to marketing names (e.g., Hyper PLA) |
 | **RFID** | `src/rfid_driver.cpp`, `include/rfid_driver.h` | PN532 driver; Key A derivation from UID; `readCFSTag()`/`writeCFSTag()` |
 | **UIManager** | `src/ui/ui_manager.cpp` | Screen management, event handling, `currentSpool`, color picker, `updateDashboardFromSpool()` |
-| **Screens** | `src/ui/screens/screen_*.cpp` | Main (3-region layout), Library (filament grid), Settings, About, Filament Select |
+| **Screens** | `src/ui/screens/screen_*.cpp` | Main (Inventory button), Library (4-column grid), Settings (Raw Log), Inventory, Spool Detail |
 | **Config** | `src/config_manager.cpp` | Persistent config (beep, WiFi) via LittleFS `config.json` |
 | **Network** | `src/network_manager.cpp` | WiFiManager portal, filament DB updates |
 | **State** | `src/system_state.cpp` | SystemState/SystemEvent enums with StateMachine transitions |
@@ -46,8 +46,9 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 ### Data flow
 1. **Startup:** LittleFS → FilamentDB parses JSON → cache of `FilamentProfile`
 2. **Library pick:** Grid tap → `FilamentProfile` → `SpoolData(profile)` → `ui.currentSpool` → `updateDashboardFromSpool()`
-3. **Read tag:** Read button → `rfid.readCFSTag(spool)` → `SpoolData(string)` → dashboard update
+3. **Auto-Read tag:** Background `rfid_task()` detects tag → `rfid.readCFSTag(spool)` → `updateDashboardFromSpool()` → status "Tag Read OK"
 4. **Write tag:** Write button → `rfid.writeCFSTag(ui.currentSpool)` → status feedback
+5. **Inventory:** Scan Tag button performs manual read and reconciliation with inventory JSON.
 
 ### Global instances
 `filamentDB`, `rfid`, `ui`, `config`, `sysState`, `network` — declared as extern globals, instantiated in their respective .cpp files.

@@ -157,8 +157,8 @@ void ScreenRfidRaw::populateTable(const char* payload) {
     // filamentId (pos 11-16): separator(1) + material type(5) = 6 chars
     snprintf(matId, sizeof(matId), "%.6s", payload + 11);
 
-    // color (pos 18-23): skip Creality's '0' prefix, show as XRRGGBB
-    snprintf(color, sizeof(color), "X%.6s", payload + 18);
+    // color (pos 18-23): skip Creality's '0' prefix, show as xRRGGBB
+    snprintf(color, sizeof(color), "x%.6s", payload + 18);
 
     // length (pos 24-27): 4 chars as-is (mm × 10 or raw value)
     snprintf(length, sizeof(length), "%.4s", payload + 24);
