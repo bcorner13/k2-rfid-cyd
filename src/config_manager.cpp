@@ -44,7 +44,7 @@ void ConfigManager::load() {
     data.db_updated_at = doc["db_updated_at"] | 0;
     data.db_profile_count = doc["db_profile_count"] | 0;
     data.db_schema_version = doc["db_schema_version"] | 0;
-    data.printer_model = doc["printer_model"] | "";
+    data.printer_model = doc["printer_model"] | "F008";  // K2 Plus model code (FW 1.1.5.5+ serves per-model DBs)
 }
 
 void ConfigManager::save() {
