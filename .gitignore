@@ -1,6 +1,7 @@
 .pio
 .cursor
 .DS_Store
+._*
 .claude
 *.bin
 *.elf
