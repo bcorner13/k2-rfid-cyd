@@ -42,6 +42,11 @@ private:
 
     // P1.10: Validate expected schema structure
     static bool validateDBSchema(const uint8_t* data, size_t length, uint16_t& profileCount);
+
+    // K2 FW 1.1.5.5+: per-model DB lives under /downloads/defData/material/.
+    // Builds http://{ip}/downloads/defData/material/{model}_material_database.json
+    // (or .../material_database.json when model is empty).
+    static String buildDBURL(const String& printer_ip, const String& printer_model);
 };
 
 extern AppNetwork network;
