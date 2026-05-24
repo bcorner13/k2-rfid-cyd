@@ -62,6 +62,19 @@ bool AppNetwork::isConnected() {
 }
 
 // ---------------------------------------------------------------------------
+// K2 FW 1.1.5.5 moved material DB to /downloads/defData/material/ and split
+// it per-printer-model. Build the right URL for the configured model.
+// ---------------------------------------------------------------------------
+String AppNetwork::buildDBURL(const String& printer_ip, const String& printer_model) {
+    String url = "http://" + printer_ip + "/downloads/defData/material/";
+    if (printer_model.length() > 0) {
+        url += printer_model + "_";
+    }
+    url += "material_database.json";
+    return url;
+}
+
+// ---------------------------------------------------------------------------
 // P1.10: SHA-256 hash using ESP32 hardware-accelerated mbedtls
 // ---------------------------------------------------------------------------
 String AppNetwork::computeSHA256(const uint8_t* data, size_t length) {
@@ -142,7 +155,7 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
     }
 
     // FSD Section 5.6 step 4: Download
-    String url = "http://" + config.data.printer_ip + "/downloads/defData/material_database.json";
+    String url = buildDBURL(config.data.printer_ip, config.data.printer_model);
     Serial.println("Updating from: " + url);
 
     http.begin(url);
@@ -299,7 +312,7 @@ bool AppNetwork::updateFilamentDB() {
     }
 
     // FSD Section 5.6: printer API endpoint
-    String url = "http://" + config.data.printer_ip + "/downloads/defData/material_database.json";
+    String url = buildDBURL(config.data.printer_ip, config.data.printer_model);
     Serial.println("Updating from: " + url);
 
     http.begin(url);
