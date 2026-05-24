@@ -13,7 +13,7 @@ struct AppConfig {
     uint32_t db_updated_at = 0;     // Uptime seconds when last updated
     uint16_t db_profile_count = 0;  // Number of profiles in last DB
     uint8_t db_schema_version = 0;  // 1 = known format, 0 = unknown/never updated
-    String printer_model;           // From /info response (e.g. "F008")
+    String printer_model = "F008";  // Selects /downloads/defData/material/{model}_material_database.json. Default = K2 Plus (F008). Empty = canonical (no prefix).
 };
 
 class ConfigManager {
