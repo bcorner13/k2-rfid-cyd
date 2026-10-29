@@ -1,6 +1,5 @@
 #include <rfid_driver.h>
 #include <esp_rom_crc.h>
-#include <Wire.h>
 
 // PN532 I2C mode — connected to Mabee I2C port (HY2.0-4P, 4-pin Grove-compatible).
 //
@@ -130,7 +129,7 @@ bool RFIDDriver::authenticateSector(uint8_t sector) {
     Serial.printf("Auth: derived key failed sector %u — re-selecting tag\n", sector);
 
     // After a failed MIFARE auth the card is deselected; re-detect it before retrying.
-    if (!nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, currentUid, &currentUidLen, 200)) {
+    if (!reselectTag()) {
         Serial.println("Auth: tag lost after re-select attempt");
         return false;
     }
@@ -817,6 +816,7 @@ bool RFIDDriver::encryptBlock(const uint8_t* input, uint8_t* output) {
 // Hex dump (raw + decrypted) printed to Serial for diagnostics.
 // ---------------------------------------------------------------------------
 bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
+    lastReadBlank = false;
     if (!nfc || !checkTagPresent()) return false;
 
     // Read sector 1 data blocks (blocks 4, 5, 6 = 48 bytes).
@@ -926,6 +926,23 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
                       parsed.getType().c_str(),
                       parsed.getWeight());
 
+        // Diagnostic: dump sector 2 (blocks 8-10). DnG K2-RFID v37+ writes a
+        // plaintext printer type here; confirm what genuine Creality spools carry.
+        uint8_t s2Buf[DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK];
+        if (readSectorRange(2, 2, s2Buf) == 0) {
+            Serial.println("CFS sector 2: unreadable");
+        } else {
+            Serial.println("CFS sector 2 (blocks 8-10):");
+            for (int b = 0; b < (int)DATA_BLOCKS_PER_SECTOR; b++) {
+                const uint8_t* r = s2Buf + b * BYTES_PER_BLOCK;
+                Serial.printf("  B%d raw:", 8 + b);
+                for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) Serial.printf(" %02X", r[i]);
+                Serial.printf("  |");
+                for (int i = 0; i < (int)BYTES_PER_BLOCK; i++) Serial.printf("%c", (r[i] >= 0x20 && r[i] < 0x7F) ? r[i] : '.');
+                Serial.println("|");
+            }
+        }
+
         // Read mirror sectors (6-8) now, while tag is still selected in this session.
         // Storing result so callers can retrieve remaining filament without a second session.
         s_lastMirrors = readMirrors();
@@ -942,6 +959,10 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
     }
 
     // Neither buffer had a valid CFS payload — append failure note to dump.
+    lastReadBlank = true;
+    for (uint8_t v : rawBuf) {
+        if (v != 0) { lastReadBlank = false; break; }
+    }
     size_t used = strlen(s_rawDump);
     snprintf(s_rawDump + used, sizeof(s_rawDump) - used, "\nNo CFS payload found");
     Serial.println("CFS: no valid CFS payload in raw or decrypted data");
@@ -949,12 +970,163 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
 }
 
 // ---------------------------------------------------------------------------
-// CFS Tag Write (skeleton)
+// CFS Tag Write
 // ---------------------------------------------------------------------------
-bool RFIDDriver::writeCFSTag(const SpoolData& spoolData) {
-    if (!nfc || !checkTagPresent()) return false;
+// Implements docs/rfid/cfs-tag-write-design.md §3. Only sector 1 is touched:
+// blocks 4-6 (encrypted payload) and, on a blank tag, the key fields of trailer
+// block 7. Access bits are never modified.
+// ---------------------------------------------------------------------------
 
+const char* cfsWriteResultText(CfsWriteResult r) {
+    switch (r) {
+        case CfsWriteResult::OK:              return "Write OK";
+        case CfsWriteResult::NO_TAG:          return "No tag on reader";
+        case CfsWriteResult::UNSUPPORTED_TAG: return "Not a MIFARE Classic 1K tag";
+        case CfsWriteResult::UNKNOWN_KEYS:    return "Tag uses unknown keys";
+        case CfsWriteResult::NO_MATERIAL_ID:  return "No material selected";
+        case CfsWriteResult::WRITE_FAILED:    return "Write failed (data blocks)";
+        case CfsWriteResult::TRAILER_UNSAFE:  return "Tag access bits not factory - refused";
+        case CfsWriteResult::TRAILER_FAILED:  return "Write failed (key block)";
+        case CfsWriteResult::VERIFY_FAILED:   return "Verify failed - rewrite tag";
+        case CfsWriteResult::NEEDS_CONFIRM:   return "Tag holds a spool - confirm overwrite";
+    }
+    return "Write failed";
+}
+
+// Re-select the card after a failed auth (which halts it). Wake the PN532 and
+// retry once if the first InListPassiveTarget misses.
+bool RFIDDriver::reselectTag() {
+    if (nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, currentUid, &currentUidLen, 100)) return true;
+    nfc->wakeup();
+    nfc->SAMConfig();
+    bool ok = nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, currentUid, &currentUidLen, 200);
+    Serial.printf("Reselect: first scan missed, after wakeup+SAMConfig %s\n", ok ? "found tag" : "still missing");
+    return ok;
+}
+
+bool RFIDDriver::authBlockWithKey(uint8_t block, const uint8_t* key) {
+    return nfc->mifareclassic_AuthenticateBlock(currentUid, currentUidLen, block, 0, (uint8_t*)key);
+}
+
+// Parse a decrypted 48-byte sector-1 buffer as a CFS payload.
+static bool parseCfsPayload(const uint8_t* dec, SpoolData& out) {
+    for (int i = 0; i < 34; i++) {
+        if (dec[i] < 0x20 || dec[i] > 0x7E) return false;
+    }
+    char tmp[49];
+    memcpy(tmp, dec, 48);
+    tmp[48] = '\0';
+    SpoolData parsed{std::string(tmp)};
+    if (parsed.getRawData().empty()) return false;
+    out = parsed;
     return true;
+}
+
+CfsTagState RFIDDriver::probeCFSTag(SpoolData* existing) {
+    if (!nfc) return CfsTagState::NO_TAG;
+    if (!checkTagPresent() && !reselectTag()) return CfsTagState::NO_TAG;
+    if (currentUidLen != 4) return CfsTagState::UNSUPPORTED;
+
+    generateKeyA(currentUid, cachedKeyA);
+    keyACached = true;
+
+    const uint8_t first = SECTOR_FORMAT * BLOCKS_PER_SECTOR;   // block 4
+    uint8_t raw[DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK];
+    auto readData = [&]() -> bool {
+        for (uint8_t b = 0; b < DATA_BLOCKS_PER_SECTOR; b++) {
+            if (!nfc->mifareclassic_ReadDataBlock(first + b, raw + b * BYTES_PER_BLOCK)) return false;
+        }
+        return true;
+    };
+
+    if (authBlockWithKey(first, cachedKeyA)) {
+        if (!readData()) return CfsTagState::PROVISIONED_BAD;
+        uint8_t dec[sizeof(raw)];
+        for (uint8_t b = 0; b < DATA_BLOCKS_PER_SECTOR; b++) {
+            decryptBlock(raw + b * BYTES_PER_BLOCK, dec + b * BYTES_PER_BLOCK);
+        }
+        SpoolData parsed;
+        if (!parseCfsPayload(dec, parsed)) return CfsTagState::PROVISIONED_BAD;
+        if (existing) *existing = parsed;
+        return CfsTagState::PROVISIONED;
+    }
+
+    // Failed auth halts the card — re-select before trying the factory key.
+    if (!reselectTag()) return CfsTagState::NO_TAG;
+    if (!authBlockWithKey(first, STD_KEY)) return CfsTagState::UNKNOWN_KEYS;
+    if (!readData()) return CfsTagState::BLANK_DIRTY;
+    for (uint8_t v : raw) {
+        if (v != 0) return CfsTagState::BLANK_DIRTY;
+    }
+    return CfsTagState::BLANK;
+}
+
+// Must run in the session that just detected the card: after a completed session
+// some blank cards can't be re-selected for several seconds, so this never re-selects
+// on the happy path — the probe leaves sector 1 authenticated and we write in it.
+CfsWriteResult RFIDDriver::writeCFSTag(const SpoolData& spoolData, bool allowOverwrite, SpoolData* existing) {
+    if (!nfc) return CfsWriteResult::NO_TAG;
+    if (spoolData.getMaterialId().length() != 5) return CfsWriteResult::NO_MATERIAL_ID;
+
+    CfsTagState state = probeCFSTag(existing);
+    Serial.printf("CFS write: tag state=%u\n", (unsigned)state);
+    switch (state) {
+        case CfsTagState::NO_TAG:       return CfsWriteResult::NO_TAG;
+        case CfsTagState::UNSUPPORTED:  return CfsWriteResult::UNSUPPORTED_TAG;
+        case CfsTagState::UNKNOWN_KEYS: return CfsWriteResult::UNKNOWN_KEYS;
+        case CfsTagState::PROVISIONED:
+            if (!allowOverwrite) return CfsWriteResult::NEEDS_CONFIRM;
+            break;
+        default: break;
+    }
+    const bool blank = (state == CfsTagState::BLANK || state == CfsTagState::BLANK_DIRTY);
+    const uint8_t first = SECTOR_FORMAT * BLOCKS_PER_SECTOR;          // block 4
+    const uint8_t trailerBlock = first + DATA_BLOCKS_PER_SECTOR;      // block 7
+
+    // 48-byte plaintext: payload, then ASCII '0' padding (DnG K2-RFID v57 reserve field).
+    uint8_t plain[DATA_BLOCKS_PER_SECTOR * BYTES_PER_BLOCK];
+    memset(plain, '0', sizeof(plain));
+    const std::string payload = spoolData.getRawData();
+    memcpy(plain, payload.data(), std::min(payload.length(), sizeof(plain)));
+    Serial.printf("CFS write: payload [%.*s]\n", (int)sizeof(plain), (const char*)plain);
+
+    uint8_t enc[sizeof(plain)];
+    for (uint8_t b = 0; b < DATA_BLOCKS_PER_SECTOR; b++) {
+        if (!encryptBlock(plain + b * BYTES_PER_BLOCK, enc + b * BYTES_PER_BLOCK)) return CfsWriteResult::WRITE_FAILED;
+    }
+
+    // Sector 1 is still authenticated from the probe (blank: FF×6, provisioned: derived key).
+    for (uint8_t b = 0; b < DATA_BLOCKS_PER_SECTOR; b++) {
+        if (!nfc->mifareclassic_WriteDataBlock(first + b, enc + b * BYTES_PER_BLOCK)) {
+            Serial.printf("CFS write: block %u failed\n", first + b);
+            return CfsWriteResult::WRITE_FAILED;
+        }
+    }
+
+    if (blank) {
+        uint8_t trailer[BYTES_PER_BLOCK];
+        if (!nfc->mifareclassic_ReadDataBlock(trailerBlock, trailer)) return CfsWriteResult::TRAILER_FAILED;
+        Serial.printf("CFS write: trailer access bits %02X %02X %02X GPB %02X\n",
+                      trailer[6], trailer[7], trailer[8], trailer[9]);
+        // Only the factory transport configuration is known to let Key A rewrite both keys.
+        if (trailer[6] != 0xFF || trailer[7] != 0x07 || trailer[8] != 0x80) return CfsWriteResult::TRAILER_UNSAFE;
+        memcpy(trailer, cachedKeyA, 6);        // Key A
+        memcpy(trailer + 10, cachedKeyA, 6);   // Key B
+        if (!nfc->mifareclassic_WriteDataBlock(trailerBlock, trailer)) return CfsWriteResult::TRAILER_FAILED;
+    }
+
+    // Verify under the derived key, exactly as the printer will read it. Re-auth in the
+    // same session (no re-select needed when the key is correct).
+    uint8_t back[sizeof(plain)];
+    if (!authBlockWithKey(first, cachedKeyA)) return CfsWriteResult::VERIFY_FAILED;
+    for (uint8_t b = 0; b < DATA_BLOCKS_PER_SECTOR; b++) {
+        if (!nfc->mifareclassic_ReadDataBlock(first + b, back + b * BYTES_PER_BLOCK)) return CfsWriteResult::VERIFY_FAILED;
+        decryptBlock(back + b * BYTES_PER_BLOCK, back + b * BYTES_PER_BLOCK);
+    }
+    if (memcmp(back, plain, sizeof(plain)) != 0) return CfsWriteResult::VERIFY_FAILED;
+
+    Serial.printf("CFS write: OK (%s path)\n", blank ? "blank" : "provisioned");
+    return CfsWriteResult::OK;
 }
 
 // ---------------------------------------------------------------------------
