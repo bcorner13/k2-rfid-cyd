@@ -138,8 +138,9 @@ void rfid_task() {
     static bool last_read_failed = false;  // require tag removal before retry after failure
     static uint8_t miss_count = 0;         // consecutive polls with no tag
 
-    // Only auto-poll in IDLE state
+    // Only auto-poll in IDLE state, and not while the overwrite dialog is open
     if (sysState.getCurrentState() != SystemState::IDLE) return;
+    if (ui.writeConfirmPending) return;
 
     // Poll every 500ms
     if (millis() - last_poll < 500) return;
@@ -251,7 +252,7 @@ void loop() {
 
     // ERROR state auto-dismiss: tick() fires TIMEOUT after auto_dismiss_ms
     if (sysState.tick()) {
-        ui.screenMain.setWriteStatus("Ready");
+        if (!ui.writeArmed) ui.screenMain.setWriteStatus("Ready");
         ui.updateButtonStates();
     }
 
