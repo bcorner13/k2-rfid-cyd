@@ -197,12 +197,16 @@ today the closest option is Generic `<type>`.
   K2), as DnG does with `scp -f`. Today it fetches the factory F008 file over HTTP.
 - Boot parse of the 711 KB live DB takes 6.4 s. Cache a trimmed copy (only the fields we use).
 
-### Milestone 3 — Inventory Flow
-- Scan tag → SpoolRecord auto-added to inventory (or reconciled if UID already exists)
-- Library pick → `FilamentProfile` → SpoolRecord → write tag → inventory updated
-- Spool Detail screen: weight shown, weight update modal works, history entry logged
-- Custom Spool Entry wizard: all 5 steps functional, Save Locally + Save+Write Tag both work
-- Inventory screen: list shows all spools with color swatch, weight bar, status dot
+### Milestone 3 — Inventory in Spoolman  *(replaces on-device inventory — see ADR-001)*
+Design: `docs/architecture/spoolman-integration.md`. Spoolman v0.27+ on the Home Assistant Pi links
+tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, format `"creality"`).
+1. Config `spoolman_url` + `SpoolmanClient`. Look up the spool on auto-read (read-only).
+2. Add unknown tag → create/link spool. After a write, offer to link or update.
+3. Inventory screen lists Spoolman spools. Remove `InventoryManager` / `inventory.json`.
+4. Push printer remaining amount to Spoolman (after the Milestone 2 remaining-amount investigation).
+- Current on-device inventory is broken and won't be fixed: Scan Tag calls `readTag()` (bogus K2PF
+  format) and never creates records for new tags.
+- Evaluate the Spoolman MCP server for managing Spoolman from Claude Code sessions.
 
 ### Milestone 4 — Polish & Completeness
 - Audio feedback: distinct tones for read-ok / write-ok / error / low-battery; boot melody
