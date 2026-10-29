@@ -154,6 +154,13 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
   1000 g via `330 * g / 1000`). Compare against a genuine spool (`0165` = 500 g) as the printer
   displays it, check what the K2 reads for remaining amount (CFS tracking in
   `box/remain_material_data.json`?), and check whether the 330 mm/g conversion is right.
+  - Observed (2026-10-29): genuine Creality tags DO show amount, but it is **estimated by the printer**
+    (spool rotations + filament diameter measured at load) and **remembered across loads**. So the
+    remaining amount is likely printer-side state keyed to the spool, not read from the tag.
+  - Hypotheses: (1) keyed by tag serial/UID — our writes use a random serial, so every write looks
+    like a new, unmeasured spool; (2) the length field seeds the estimate.
+  - Test: diff `box/remain_material_data.json` + `material_box_info.json` before/after loading the
+    genuine spool, then the written card.
 - [x] Key A derivation confirmed correct (derived key opens the written card on re-read)
 - [ ] ~~CRC32 and mirror sectors written~~ — not part of the Creality format (the K2 uses sector 1
   only). The project's own extension sectors are not written by the CFS path. Decide whether to keep them.
