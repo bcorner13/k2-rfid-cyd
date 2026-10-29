@@ -40,6 +40,7 @@ struct SpoolData {
         _displayName = std::string(profile.name.c_str());
         _brandName = trim_copy(profile.brand.c_str());
         _materialType = trim_copy(profile.material_type.c_str());
+        _materialId = trim_copy(profile.id.c_str());   // 5-digit DB id, e.g. "01001" — this is what goes on the tag
         _materialColorNumeric = profile.color_hex;
         _materialColorString = profile.color_name.c_str();
         _materialWeight = profile.weight_g;
@@ -74,6 +75,7 @@ struct SpoolData {
         _materialVendor = spooldata.substr(5, 4);
         _materialBatch = spooldata.substr(9, 2);
         _materialType = trim_copy(spooldata.substr(12, 5));
+        _materialId = _materialType;   // keep the raw code before mapping to a display name
 
         // Map known vendor codes to brand names used in the DB / UI brand dropdown.
         // 0276 = Creality (confirmed). Unknown vendors fall back to "Generic" (index 0).
@@ -138,10 +140,16 @@ struct SpoolData {
     std::string getColorName() const { return _materialColorString; }
     uint32_t getColorHex() const { return _materialColorNumeric; }
     uint32_t getWeight() const { return _materialWeight; }
+    std::string getMaterialId() const { return _materialId; }
 
     // Setters
     void setWeight(uint32_t w) {
         _materialWeight = w;
+        _generateSpooldataString();
+    }
+
+    void setMaterialId(const char* id) {
+        _materialId = id ? trim_copy(std::string(id)) : "";
         _generateSpooldataString();
     }
 
@@ -168,7 +176,8 @@ struct SpoolData {
       _spooldata += _materialBatch;
       _spooldata += "1";
 
-      std::string type = _materialType;
+      // Material field carries the DB id ("01001"), not the display type ("PLA").
+      std::string type = _materialId;
       while(type.length() < 5) type += " ";
       if(type.length() > 5) type = type.substr(0,5);
       _spooldata += type;
@@ -194,6 +203,7 @@ struct SpoolData {
     std::string _materialDate = "";
     std::string _materialVendor = "";
     std::string _materialType = "";
+    std::string _materialId = "";
     std::string _brandName = ""; // Added brand name member
     uint32_t _materialWeight = 0;
     uint32_t _materialColorNumeric = 0;
