@@ -4,9 +4,10 @@
 
 ## 🎯 Current Focus
 
-**Milestone 1: Hardware-Stable Core** — Fix the 9 hardware-observed bugs (collected 2026-03-10) before
-advancing features. Goal: RFID read/write works reliably on a real Creality spool, no UI lockouts,
-clean boot output.
+**Milestone 2: Verified RFID R/W** — CFS tag write is implemented (2026-10-29, branch
+`feat/cfs-tag-write`). It works on blank and provisioned cards with read-back verify on this device.
+**Remaining acceptance test: load a written tag in the K2 Plus CFS** and confirm material, color and
+weight. Design: `docs/rfid/cfs-tag-write-design.md`.
 
 ---
 
@@ -132,23 +133,46 @@ Three root causes fixed (2026-03-20):
 
 ## 🗺 Milestones
 
-### Milestone 1 — Hardware-Stable Core  *(current)*
+### Milestone 1 — Hardware-Stable Core
 Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 - RFID reads a real Creality spool without auth failure
 - No UI lockout after any error condition; Dismiss/Retry always available
-- Clean boot log (no invalid-pin errors, no .tmp errors)
+- Clean boot log (no invalid-pin errors, no .tmp errors) — **NOT met** (boot log 2026-10-28): both
+  `__pinMode(): Invalid pin selected` ×2 and `/littlefs/*.tmp does not exist` still print. The 0xFF
+  sentinel and `exists()` guards don't silence them; root cause unconfirmed (likely Adafruit_PN532
+  calling pinMode unconditionally, and arduino-esp32 `LittleFS.exists()` logging via `open()`).
 - Audio plays on RFID read success and failure
 - Splash shows WiFi status + Continue button
 
-### Milestone 2 — Verified RFID R/W
-- RFID **write** tested on a blank MIFARE Classic tag → verified in Creality K2 Plus
-- Key A derivation confirmed correct against spec
-- CRC32 and mirror sectors written and validated on read-back
-- SpoolData fields (date code, vendor, material, color, length, serial) round-trip correctly
-- State transitions: IDLE → READING/WRITING → IDLE (no lockout, no stale state)
+### Milestone 2 — Verified RFID R/W  *(current)*
+- [x] RFID **write** on a blank MIFARE Classic card: blank path (factory key → derived key) and
+  provisioned path (overwrite with confirmation). Read-back verify passes (2026-10-29).
+- [ ] **Verified in Creality K2 Plus** — the acceptance test
+- [x] Key A derivation confirmed correct (derived key opens the written card on re-read)
+- [ ] ~~CRC32 and mirror sectors written~~ — not part of the Creality format (the K2 uses sector 1
+  only). The project's own extension sectors are not written by the CFS path. Decide whether to keep them.
+- [x] SpoolData fields round-trip byte-for-byte (date, vendor, batch, material id, color, length, serial)
+- [x] State transitions IDLE → WRITING → VERIFYING → IDLE (fixed: success used to stick in VERIFYING)
+- [ ] Spool Detail "Write Tag" still writes to an already-detected tag (fails on some blank cards).
+  Move it to the armed "place tag to write" flow.
+- Note: extra cards within ~5–10 cm of the reader cause random auth/read failures. Keep one card in the field.
 - **Remaining grams on main screen:** After auto-read, surface `rfid.getLastMirrors()` data
   (`remain_weight_g`) on the dashboard so users can see current vs original weight at a glance.
   Mirror sectors use the standard MIFARE key (confirmed 2026-03-20 on Creality spool).
+
+### Milestone 2b — Custom Filaments
+The printer DB (`material_database.json`, 66 profiles) lacks many real spools: no Polymaker PETG, no
+Polymaker Fiberon PA6-CF20, eSUN is PLA-only. The tag carries only a 5-char material id (no brand), so
+today the closest option is Generic `<type>`.
+1. **Local custom filaments (on device):** user-defined brand / name / type / temps, each mapped to
+   the nearest DB material id for the tag (e.g. Fiberon PA6-CF20 → Generic PA6-CF). Stored on
+   LittleFS (or SD). Shown in the Library and brand/type dropdowns. On read-back the tag only shows
+   the generic id. To show the custom name again, remember tag UID → custom filament in inventory.
+2. **Push custom filaments to the printer DB:** so the K2 itself recognises e.g. Fiberon PA6-CF20
+   with its own temps. DnG-Crafts/K2-RFID does this ("database update function to match data in
+   crealityprint", v37). Study its mechanism, and how it survives printer firmware updates, before
+   writing anything to the printer.
+- Design item 1 so its records can be pushed by item 2 later (same fields as a DB `base` + `kvParam` entry).
 
 ### Milestone 3 — Inventory Flow
 - Scan tag → SpoolRecord auto-added to inventory (or reconciled if UID already exists)
@@ -209,6 +233,13 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 
 ## 🔭 Future / Non-Blocking
 
+- **OpenPrintTag (Prusa Core One L+)** — open RFID standard (https://openprinttag.org). Reference
+  notes in `docs/rfid/openprinttag-spec.md` (written 2026-03, re-check against the current spec).
+  Read support first, then write.
+- **PCF8563 RTC driver** — no driver exists yet. Use for inventory/write-log timestamps. The CFS
+  date code stays `AB124`: its encoding is undecoded (a real spool has `2C525`) and the printer
+  appears to ignore it.
+
 - Printer integration: auto-update remaining filament weight from OctoPrint / Klipper / Creality Cloud
 - Multi-printer support (track which spool is in which printer)
 - Statistics dashboard: consumption trends from SD card usage logs
@@ -218,4 +249,4 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 
 ---
 
-*Last updated: 2026-03-20*
+*Last updated: 2026-10-29*
