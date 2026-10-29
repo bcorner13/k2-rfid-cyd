@@ -40,6 +40,32 @@ struct TagVersionInfo {
     uint32_t origin_magic;      // raw magic from sector 10, 0 if not v2
 };
 
+// Sector-1 key state of the tag on the reader (see docs/rfid/cfs-tag-write-design.md §3).
+enum class CfsTagState : uint8_t {
+    NO_TAG,          // nothing selectable on the reader
+    UNSUPPORTED,     // not a 4-byte-UID MIFARE Classic
+    BLANK,           // factory key FF×6, sector 1 all zeros
+    BLANK_DIRTY,     // factory key FF×6, sector 1 has non-CFS data
+    PROVISIONED,     // derived key, valid CFS payload
+    PROVISIONED_BAD, // derived key, payload does not parse
+    UNKNOWN_KEYS     // neither key authenticates
+};
+
+enum class CfsWriteResult : uint8_t {
+    OK,
+    NO_TAG,
+    UNSUPPORTED_TAG,
+    UNKNOWN_KEYS,
+    NO_MATERIAL_ID,  // SpoolData has no 5-char material ID (DB id) to write
+    WRITE_FAILED,
+    TRAILER_UNSAFE,  // access bits are not factory FF 07 80 — refused to touch trailer
+    TRAILER_FAILED,
+    VERIFY_FAILED,
+    NEEDS_CONFIRM    // tag holds a valid spool and allowOverwrite was false
+};
+
+const char* cfsWriteResultText(CfsWriteResult r);
+
 class RFIDDriver {
 public:
     RFIDDriver();
@@ -50,7 +76,16 @@ public:
 
     // K2 / CFS Operations (legacy SpoolData API)
     bool readCFSTag(SpoolData& spoolData);
-    bool writeCFSTag(const SpoolData& spoolData);
+    // Probe + write in the current card session. *existing gets the decoded payload
+    // when the tag is PROVISIONED (for the overwrite confirmation).
+    CfsWriteResult writeCFSTag(const SpoolData& spoolData, bool allowOverwrite, SpoolData* existing = nullptr);
+
+    // Classify the tag on the reader without writing. If PROVISIONED, *existing
+    // receives the decoded payload (used for the overwrite confirmation).
+    CfsTagState probeCFSTag(SpoolData* existing = nullptr);
+
+    // True when the last readCFSTag() failed because sector 1 is blank (all zeros).
+    bool lastReadWasBlank() const { return lastReadBlank; }
 
     // P1.1: TagData-based read/write (FSD Section 7.9)
     bool readTag(TagData& out);
@@ -120,8 +155,11 @@ private:
     bool decryptBlock(const uint8_t* input, uint8_t* output);
     bool encryptBlock(const uint8_t* input, uint8_t* output);
     bool authenticateSector(uint8_t sector);
+    bool reselectTag();
+    bool authBlockWithKey(uint8_t block, const uint8_t* key);
 
     // State
+    bool lastReadBlank = false;
     uint8_t currentUid[7];
     uint8_t currentUidLen;
     uint8_t cachedKeyA[6];

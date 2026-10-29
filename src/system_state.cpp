@@ -122,6 +122,8 @@ void StateMachine::handleEvent(SystemEvent event) {
                 transitionTo(SystemState::VERIFYING_TAG);
             else if (event == SystemEvent::OPERATION_FAILED)
                 enterError("Tag write failed", 10000, true);
+            else if (event == SystemEvent::USER_DISMISS)   // overwrite confirmation cancelled
+                transitionTo(SystemState::IDLE);
             break;
 
         case SystemState::VERIFYING_TAG:
