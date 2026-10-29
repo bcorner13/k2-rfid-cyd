@@ -150,6 +150,10 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 - [x] **Verified in Creality K2 Plus** (2026-10-29): a card written by this device as eSUN PETG
   (`E2001`, yellow) was recognised by the K2 Plus CFS. Material and color matched, and the printer
   applied its own eSUN PETG temps (~240 °C).
+- [ ] **Printer did not show weight/remaining amount** for that tag (payload length field `0330` =
+  1000 g via `330 * g / 1000`). Compare against a genuine spool (`0165` = 500 g) as the printer
+  displays it, check what the K2 reads for remaining amount (CFS tracking in
+  `box/remain_material_data.json`?), and check whether the 330 mm/g conversion is right.
 - [x] Key A derivation confirmed correct (derived key opens the written card on re-read)
 - [ ] ~~CRC32 and mirror sectors written~~ — not part of the Creality format (the K2 uses sector 1
   only). The project's own extension sectors are not written by the CFS path. Decide whether to keep them.
