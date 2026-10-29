@@ -27,7 +27,29 @@ static constexpr uint32_t WRITE_ARM_TIMEOUT_MS = 30000;
 static bool     s_writeAllowOverwrite = false;
 static uint32_t s_writeArmedMs = 0;
 
+// Nearest plain color name for an RGB value (tags and the DB store hex only).
+static const char* colorName(uint32_t rgb) {
+    static const struct { const char* name; uint32_t rgb; } kColors[] = {
+        {"Black", 0x000000}, {"White", 0xFFFFFF}, {"Grey", 0x808080}, {"Silver", 0xC0C0C0},
+        {"Red", 0xE53935},   {"Orange", 0xFB8C00}, {"Yellow", 0xFDD835}, {"Gold", 0xC9A227},
+        {"Green", 0x43A047}, {"Lime", 0x9CCC65},  {"Teal", 0x00897B},   {"Blue", 0x1E88E5},
+        {"Navy", 0x1A237E},  {"Purple", 0x8E24AA}, {"Pink", 0xEC407A},  {"Brown", 0x795548},
+        {"Beige", 0xD7CCA1},
+    };
+    const char* best = kColors[0].name;
+    uint32_t bestDist = UINT32_MAX;
+    for (const auto& c : kColors) {
+        int dr = (int)((rgb >> 16) & 0xFF) - (int)((c.rgb >> 16) & 0xFF);
+        int dg = (int)((rgb >> 8) & 0xFF) - (int)((c.rgb >> 8) & 0xFF);
+        int db = (int)(rgb & 0xFF) - (int)(c.rgb & 0xFF);
+        uint32_t d = dr * dr + dg * dg + db * db;
+        if (d < bestDist) { bestDist = d; best = c.name; }
+    }
+    return best;
+}
+
 static void overwrite_confirm_cb(lv_event_t* e) {
+    ui.writeConfirmPending = false;
     lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
     bool confirmed = (bool)(uintptr_t)lv_event_get_user_data(e);
     lv_msgbox_close(lv_obj_get_parent(lv_obj_get_parent(btn)));   // button -> footer -> msgbox
@@ -55,6 +77,32 @@ void UIManager::writeTick() {
     if (writeArmed && millis() - s_writeArmedMs > WRITE_ARM_TIMEOUT_MS) cancelWrite("Write cancelled (timeout)");
 }
 
+void UIManager::selectMaterial(const char* brand, const char* type, bool brandChanged) {
+    const FilamentProfile* match = nullptr;      // brand + type
+    const FilamentProfile* brandAny = nullptr;   // brand, any type
+    const FilamentProfile* generic = nullptr;    // Generic + type
+    for (const auto& p : filamentDB.getCache()) {
+        if (p.brand == brand) {
+            if (!brandAny) brandAny = &p;
+            if (!match && p.material_type == type) match = &p;
+        }
+        if (!generic && p.brand == "Generic" && p.material_type == type) generic = &p;
+    }
+    const FilamentProfile* pick = match ? match : (brandChanged ? brandAny : generic);
+    if (!pick) {
+        screenMain.setWriteStatus("No profile for that material", false, false);
+        return;
+    }
+    SpoolData sd(*pick);
+    sd.setColor(currentSpool.getColorHex());      // keep the user's color and weight
+    sd.setWeight(currentSpool.getWeight());
+    updateDashboardFromSpool(sd);
+    char msg[64];
+    if (match) snprintf(msg, sizeof(msg), "Selected %s", pick->name.c_str());
+    else       snprintf(msg, sizeof(msg), "No %s %s in DB - using %s", brand, type, pick->name.c_str());
+    screenMain.setWriteStatus(msg, match != nullptr, match != nullptr);
+}
+
 void UIManager::onTagForWrite() {
     writeArmed = false;
     sysState.handleEvent(SystemEvent::WRITE_REQUEST);
@@ -74,9 +122,13 @@ void UIManager::onTagForWrite() {
     } else if (r == CfsWriteResult::NEEDS_CONFIRM) {
         sysState.handleEvent(SystemEvent::USER_DISMISS);        // WRITING -> IDLE; nothing written
         screenMain.setWriteStatus(cfsWriteResultText(r), false, true);
-        char msg[128];
-        snprintf(msg, sizeof(msg), "This tag already holds a spool:\n%s  %s  %ug\n\nOverwrite it?",
-                 existing.getType().c_str(), existing.getColorName().c_str(), existing.getWeight());
+        // e.g. "Creality CR-Silk\nColor #000000  -  1000 g"
+        const std::string name = existing.getDisplayName().empty()
+            ? ("Material " + existing.getMaterialId()) : (existing.getBrand() + " " + existing.getDisplayName());
+        char msg[160];
+        snprintf(msg, sizeof(msg), "This tag already holds:\n\n%s\n%s (%s)  -  %u g\n\nReplace it with the selected filament?",
+                 name.c_str(), colorName(existing.getColorHex()), existing.getColorName().c_str(), existing.getWeight());
+        writeConfirmPending = true;
         lv_obj_t* mbox = lv_msgbox_create(NULL);
         lv_msgbox_add_title(mbox, "Overwrite tag?");
         lv_msgbox_add_text(mbox, msg);
@@ -130,7 +182,10 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnInventory, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);   // dropped in fb35184
     lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenMain.ddBrand, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenMain.ddType, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_add_event_cb(screenSettings.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnAbout, event_handler, LV_EVENT_CLICKED, NULL);
@@ -515,6 +570,13 @@ void UIManager::event_handler(lv_event_t* e) {
             int weight = lv_slider_get_value(obj);
             ui.currentSpool.setWeight(weight);
             lv_label_set_text_fmt(ui.screenMain.labelWeight, "%dg", weight);
+        }
+        else if (obj == ui.screenMain.ddBrand || obj == ui.screenMain.ddType) {
+            if (isSystemBusy()) return;
+            char brand[48], type[24];
+            lv_dropdown_get_selected_str(ui.screenMain.ddBrand, brand, sizeof(brand));
+            lv_dropdown_get_selected_str(ui.screenMain.ddType, type, sizeof(type));
+            ui.selectMaterial(brand, type, obj == ui.screenMain.ddBrand);
         }
         else if (obj == ui.screenSettings.swBeep) {
             config.data.beep_enabled = lv_obj_has_state(obj, LV_STATE_CHECKED);

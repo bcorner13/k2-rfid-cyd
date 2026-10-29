@@ -173,6 +173,16 @@ today the closest option is Generic `<type>`.
    crealityprint", v37). Study its mechanism, and how it survives printer firmware updates, before
    writing anything to the printer.
 - Design item 1 so its records can be pushed by item 2 later (same fields as a DB `base` + `kvParam` entry).
+- **Findings 2026-10-29:** the printer's live DB is `/mnt/UDISK/creality/userdata/box/material_database.json`
+  (101 unique ids, 118 entries), not the HTTP-served factory `F008` file (75). It includes all the Fiberon
+  grades (e.g. `P7003` Fiberon PA6-CF20). CrealityPrint pushes profile updates **and user presets** into it
+  ("download new profiles" popup). Presets reuse a base material id: "Polymaker PETG" is stored under eSUN
+  PETG `E2001`. So custom filaments may be best created as CrealityPrint presets rather than by editing
+  the printer file, which a later sync could overwrite. Open question: which entry the K2 picks when
+  several share an id.
+- **Update DB should fetch the live box DB over SSH** (`root`, DnG default password `creality_2024` for
+  K2), as DnG does with `scp -f`. Today it fetches the factory F008 file over HTTP.
+- Boot parse of the 711 KB live DB takes 6.4 s. Cache a trimmed copy (only the fields we use).
 
 ### Milestone 3 — Inventory Flow
 - Scan tag → SpoolRecord auto-added to inventory (or reconciled if UID already exists)

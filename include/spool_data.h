@@ -81,33 +81,10 @@ struct SpoolData {
         // 0276 = Creality (confirmed). Unknown vendors fall back to "Generic" (index 0).
         if (_materialVendor == "0276") _brandName = "Creality";
 
-        // Creality CFS tags store a numeric material-type code (e.g. "01001")
-        // rather than the alphabetic abbreviation used in the DB and UI dropdowns.
-        // Map known codes → alphabetic names so the dashboard dropdown matches.
-        static const struct { const char* code; const char* name; } kTypeMap[] = {
-            { "00001", "PLA"     }, { "00002", "PLA"     }, { "00003", "PETG"    },
-            { "00004", "ABS"     }, { "00005", "TPU"     }, { "00006", "PLA-CF"  },
-            { "00007", "ASA"     }, { "00008", "PA"      }, { "00009", "PA-CF"   },
-            { "00010", "BVOH"    }, { "00011", "PVA"     }, { "00012", "HIPS"    },
-            { "00013", "PET-CF"  }, { "00014", "PETG-CF" }, { "00015", "PA6-CF"  },
-            { "00016", "PAHT-CF" }, { "00017", "PPS"     }, { "00018", "PPS-CF"  },
-            { "00019", "PP"      }, { "00020", "PET"     }, { "00021", "PC"      },
-            { "00022", "PA-CF"   }, { "00023", "PA"      }, { "00024", "PLA"     },
-            { "00025", "PA-CF"   }, { "00026", "TPU"     }, { "00027", "PETG-GF" },
-            { "00031", "PP-CF"   }, { "00032", "PCTG"    }, { "00033", "ASA-CF"  },
-            { "00034", "PA-GF"   }, { "00035", "PLA"     },
-            { "01001", "Hyper PLA" }, { "01601", "Hyper PLA" }, { "02001", "PLA-CF"  },
-            { "03001", "Hyper ABS" }, { "04001", "Hyper PLA" }, { "05001", "Hyper PLA" },
-            { "06001", "Hyper PETG" }, { "06002", "Hyper PETG" }, { "07001", "Hyper ABS" },
-            { "07002", "PC"      }, { "08001", "Hyper PLA" }, { "09001", "Hyper PLA" },
-            { "09002", "Hyper PLA" }, { "10001", "TPU"     }, { "11001", "PA"      },
-            { "12002", "PA-CF"   }, { "12003", "PA-CF"   }, { "13001", "Hyper PLA" },
-            { "14001", "Hyper PLA" }, { "15001", "Hyper PLA" }, { "16001", "TPU"     },
-            { "17001", "Hyper PLA" }, { "18001", "Hyper PLA" }, { "19001", "ASA"     },
-        };
-        for (const auto& m : kTypeMap) {
-            if (_materialType == m.code) { _materialType = m.name; break; }
-        }
+        // The material field is the DB id ("05001"). The display name/type is resolved
+        // against material_database.json by the caller (applyProfile). A hard-coded
+        // code->name table used to live here and was wrong (05001 showed "Hyper PLA";
+        // the DB says CR-Silk).
 
         try {
             _materialColorNumeric = std::stoi(spooldata.substr(18, 6), nullptr, 16);
@@ -146,6 +123,14 @@ struct SpoolData {
     void setWeight(uint32_t w) {
         _materialWeight = w;
         _generateSpooldataString();
+    }
+
+    // Fill display fields (brand, name, type) from the DB profile matching the tag's
+    // material id. Color, weight and the raw payload are left as read from the tag.
+    void applyProfile(const FilamentProfile& p) {
+        _brandName = trim_copy(p.brand.c_str());
+        _displayName = std::string(p.name.c_str());
+        _materialType = trim_copy(p.material_type.c_str());
     }
 
     void setMaterialId(const char* id) {

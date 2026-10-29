@@ -1,5 +1,9 @@
 #include <rfid_driver.h>
+#include <filament_db.h>
 #include <esp_rom_crc.h>
+#include <algorithm>
+
+static void resolveMaterial(SpoolData& sd);   // defined with the CFS write helpers
 
 // PN532 I2C mode — connected to Mabee I2C port (HY2.0-4P, 4-pin Grove-compatible).
 //
@@ -904,6 +908,7 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
         SpoolData parsed(payload);
         if (parsed.getRawData().empty()) continue;
 
+        resolveMaterial(parsed);
         spoolData = parsed;
 
         // Cache the decoded payload string for the RFID Raw table screen.
@@ -1008,6 +1013,16 @@ bool RFIDDriver::authBlockWithKey(uint8_t block, const uint8_t* key) {
     return nfc->mifareclassic_AuthenticateBlock(currentUid, currentUidLen, block, 0, (uint8_t*)key);
 }
 
+// Fill brand/name/type from material_database.json using the tag's material id.
+static void resolveMaterial(SpoolData& sd) {
+    FilamentProfile profile;
+    if (filamentDB.getProfileById(sd.getMaterialId().c_str(), profile)) {
+        sd.applyProfile(profile);
+    } else {
+        Serial.printf("CFS: material id %s not in DB\n", sd.getMaterialId().c_str());
+    }
+}
+
 // Parse a decrypted 48-byte sector-1 buffer as a CFS payload.
 static bool parseCfsPayload(const uint8_t* dec, SpoolData& out) {
     for (int i = 0; i < 34; i++) {
@@ -1018,6 +1033,7 @@ static bool parseCfsPayload(const uint8_t* dec, SpoolData& out) {
     tmp[48] = '\0';
     SpoolData parsed{std::string(tmp)};
     if (parsed.getRawData().empty()) return false;
+    resolveMaterial(parsed);
     out = parsed;
     return true;
 }
