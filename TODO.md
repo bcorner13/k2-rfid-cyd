@@ -4,10 +4,10 @@
 
 ## 🎯 Current Focus
 
-**Milestone 2: Verified RFID R/W** — CFS tag write is implemented (2026-10-29, branch
-`feat/cfs-tag-write`). It works on blank and provisioned cards with read-back verify on this device.
-**Remaining acceptance test: load a written tag in the K2 Plus CFS** and confirm material, color and
-weight. Design: `docs/rfid/cfs-tag-write-design.md`.
+**Milestone 2: Verified RFID R/W** — CFS tag write is implemented and **accepted by the K2 Plus**
+(2026-10-29, branch `feat/cfs-tag-write`). Remaining Milestone 2 items: move Spool Detail "Write Tag"
+to the armed flow, and decide on the project's non-Creality extension sectors. Next up: Milestone 2b
+(custom filaments). Design: `docs/rfid/cfs-tag-write-design.md`.
 
 ---
 
@@ -147,7 +147,9 @@ Fix all 9 active bugs (Step 1–7 above). Exit criteria:
 ### Milestone 2 — Verified RFID R/W  *(current)*
 - [x] RFID **write** on a blank MIFARE Classic card: blank path (factory key → derived key) and
   provisioned path (overwrite with confirmation). Read-back verify passes (2026-10-29).
-- [ ] **Verified in Creality K2 Plus** — the acceptance test
+- [x] **Verified in Creality K2 Plus** (2026-10-29): a card written by this device as eSUN PETG
+  (`E2001`, yellow) was recognised by the K2 Plus CFS. Material and color matched, and the printer
+  applied its own eSUN PETG temps (~240 °C).
 - [x] Key A derivation confirmed correct (derived key opens the written card on re-read)
 - [ ] ~~CRC32 and mirror sectors written~~ — not part of the Creality format (the K2 uses sector 1
   only). The project's own extension sectors are not written by the CFS path. Decide whether to keep them.
