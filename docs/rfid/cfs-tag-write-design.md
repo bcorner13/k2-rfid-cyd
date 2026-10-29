@@ -27,6 +27,14 @@ What the K2 actually uses is **sector 1 only**:
 > `creality-k2plus-rfid-spec.md` (the "K2PF" magic and binary sectors 1–15) does **not** match real tags.
 > Do not use it for the CFS write path.
 
+## 1a. Still valid on current firmware? (checked 2026-10-29)
+
+- **DnG-Crafts/K2-RFID** is the original reference and is actively maintained (v57, 2026-04-13). Its `U_KEY` and `D_KEY` are byte-identical to ours. Its sector-1 write is the same as §3: encrypt blocks 4–6, and on a blank tag copy the derived key into trailer bytes 0–5 and 10–15.
+- **v37 (2026-01-03) added sector 2:** the payload is space-padded to 96 chars. Bytes 48–95 are written **plaintext** to blocks 8–10 under `FF×6` and contain the printer type (`k2`/`k1`/`hi`, lowercase). The sector-2 trailer is never touched. The commit message is "Add support for more creality printers". Nothing shows whether K2 firmware *requires* sector 2. → Read sector 2 of the real Hyper PLA spool before deciding (§7 Q4).
+- **Encryption was introduced by a K2 update around Feb 2025.** Tags written before then had to be rewritten. Both references post-date that change.
+- **Apr 2026 forum reports:** after a firmware update, the printer misidentified *genuine Creality* spools (Hyper PLA shown as PETG-CF). No cause has been found. This points at the printer's material database rather than the tag format. It matters to us because material IDs we write must exist in the *printer's* DB. Keep `material_database.json` synced from the printer (FW 1.1.5.5+ per-model path, PR #13).
+- The `donduce/K2-RFID_newer` fork (our `bcorner13` fork's parent) has had no updates since May 2025. Prefer DnG-Crafts as the reference.
+
 ## 2. Payload
 
 These fields are already produced by `SpoolData::_generateSpooldataString()`:
@@ -42,7 +50,7 @@ These fields are already produced by `SpoolData::_generateSpooldataString()`:
 | 18–23 | 6 | Color RGB hex | from profile / picker |
 | 24–27 | 4 | Length | `330 * weight_g / 1000`, zero-padded |
 | 28–33 | 6 | Serial | random 6 digits |
-| 34–47 | 14 | Padding | ASCII `0` (reference behaviour) |
+| 34–47 | 14 | Reserve | ASCII `0` ×14 (DnG v57: `reserve = "00000000000000"`) |
 
 The real Creality tag has `000000` at 34–39, then `05 00 …`. The reference pads with ASCII `0`.
 The reference project's users report the K2 accepts its tags. That is a claim we have not verified ourselves (open question 1).
@@ -65,6 +73,7 @@ The reference project's users report the K2 accepts its tags. That is a claim we
      trailer[10..15] = derived key  (Key B)
      trailer[6..9]   unchanged      (access bits + GPB)
      write block 7
+5b. (pending Q4) sector 2: auth FF×6 → write blocks 8–10 plaintext = printer type, space-padded; skip if auth fails
 6. verify: re-select, auth block 4 with derived key, read 4–6, decrypt, compare to plaintext
 7. return a result enum, not a bool:
      OK | NO_TAG | UNSUPPORTED_TAG | UNKNOWN_KEYS | WRITE_FAILED | TRAILER_UNSAFE | TRAILER_FAILED | VERIFY_FAILED
@@ -103,3 +112,4 @@ The reference project's users report the K2 accepts its tags. That is a claim we
 1. Padding: ASCII `0` (reference) vs. the `000000` + `05 00…` seen on a real tag. Start with the reference. If the K2 rejects the tag, try matching the real tag byte-for-byte.
 2. Date, batch and serial defaults: keep `AB124` / `A2` / random serial, or derive the date from the RTC?
 3. Should Write require a confirmation before overwriting a tag that already decodes as a valid CFS spool?
+4. Sector 2: does a genuine Creality spool carry data in blocks 8–10? If yes, match it. If it's empty, writing DnG's printer-type string is still harmless (plaintext, default key, trailer untouched).
