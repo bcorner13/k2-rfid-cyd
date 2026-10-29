@@ -6,12 +6,13 @@
 #define LV_USE_LOG 1
 #define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
 
-/* Memory manager — LVGL 9.5 API.
- * LV_STDLIB_CLIB (1): use standard malloc/free/realloc from the system heap.
- * On ESP32 Arduino this gives ~200KB+ of dynamic heap instead of LVGL's
- * default 64KB built-in pool. Display buffer is still PSRAM via heap_caps_malloc
- * in lvgl_display.cpp. The old LV_MEM_CUSTOM block is unused in LVGL 9.x. */
-#define LV_USE_STDLIB_MALLOC 1  /* LV_STDLIB_CLIB */
+/* Memory manager — LVGL 9.x API.
+ * LV_STDLIB_CUSTOM (255): LVGL objects/styles are allocated from PSRAM by
+ * src/lv_mem_psram.c. Plain malloc (LV_STDLIB_CLIB) put every small LVGL
+ * allocation in internal RAM — ~400 Library grid objects for 66 filaments
+ * left only ~2KB internal heap free. The display draw buffer stays in internal
+ * RAM (heap_caps_malloc in lvgl_display.cpp) for render speed. */
+#define LV_USE_STDLIB_MALLOC 255  /* LV_STDLIB_CUSTOM */
 
 /* Hardware and Driver configuration */
 #define LV_DEF_REFR_PERIOD  30      /*[ms]*/
