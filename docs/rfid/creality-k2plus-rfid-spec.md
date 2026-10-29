@@ -6,6 +6,11 @@
 **Tag Type:** MIFARE Classic 1K only  
 **Audience:** Firmware developers, reverse engineers, integrators
 
+
+> ⚠️ **Does not match real Creality tags** (verified 2026-10-28 on a Hyper PLA spool). Real tags hold an
+> AES-encrypted ASCII payload in sector 1 blocks 4–6 — no "K2PF" magic, no binary sectors 2–5.
+> See `cfs-tag-write-design.md` for the measured layout. Kept for history only.
+
 ---
 
 ## 1. Purpose
