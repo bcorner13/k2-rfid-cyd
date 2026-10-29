@@ -90,6 +90,14 @@ void ScreenMain::init() {
     lv_obj_set_style_text_font(labelBattStatus, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(labelBattStatus, lv_color_hex(0x808080), 0);
 
+    // Operation status (center of top bar). Moved out of the 100px bottom row, where it
+    // overflowed and was scrolled out of view.
+    labelWriteStatus = lv_label_create(statusBar);
+    lv_label_set_text(labelWriteStatus, "Ready");
+    lv_obj_set_style_text_font(labelWriteStatus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xC0C0C0), 0);
+    lv_obj_add_flag(labelWriteStatus, LV_OBJ_FLAG_CLICKABLE);  // tap to dismiss error
+
     labelWifiStatus = lv_label_create(statusBar);
     lv_label_set_text(labelWifiStatus, LV_SYMBOL_WIFI " No WiFi");
     lv_obj_set_style_text_font(labelWifiStatus, &lv_font_montserrat_14, 0);
@@ -198,12 +206,7 @@ void ScreenMain::init() {
     lv_obj_set_flex_flow(bottomArea, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(bottomArea, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(bottomArea, 8, 0);
-
-    labelWriteStatus = lv_label_create(bottomArea);
-    lv_label_set_text(labelWriteStatus, "Ready");
-    lv_obj_set_style_text_font(labelWriteStatus, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x404040), 0);
-    lv_obj_add_flag(labelWriteStatus, LV_OBJ_FLAG_CLICKABLE);  // tap to dismiss error
+    lv_obj_clear_flag(bottomArea, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t* btnCont = lv_obj_create(bottomArea);
     lv_obj_set_style_bg_opa(btnCont, 0, 0);
@@ -213,6 +216,7 @@ void ScreenMain::init() {
     lv_obj_set_flex_align(btnCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(btnCont, 8, 0);
     lv_obj_set_width(btnCont, 400);
+    lv_obj_set_height(btnCont, LV_SIZE_CONTENT);
     lv_obj_set_align(btnCont, LV_ALIGN_BOTTOM_MID);
 
     btnWrite = lv_btn_create(btnCont);
@@ -247,13 +251,14 @@ void ScreenMain::show() {
 }
 
 void ScreenMain::setWriteStatus(const char* status, bool success, bool neutral) {
+    Serial.printf("Status: %s\n", status);
     lv_label_set_text(labelWriteStatus, status);
     if (neutral) {
-        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x404040), 0);
+        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xC0C0C0), 0);
     } else if (success) {
-        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x008000), 0);
+        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0x00C853), 0);
     } else {
-        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xC80000), 0);
+        lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xFF5252), 0);
     }
     lv_obj_invalidate(labelWriteStatus);
 }

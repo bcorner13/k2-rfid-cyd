@@ -136,16 +136,29 @@ void rfid_task() {
     static String last_uid = "";
     static uint32_t last_detection_time = 0;
     static bool last_read_failed = false;  // require tag removal before retry after failure
+    static uint8_t miss_count = 0;         // consecutive polls with no tag
 
-    // Only auto-poll in IDLE state
+    // Only auto-poll in IDLE state, and not while the overwrite dialog is open
     if (sysState.getCurrentState() != SystemState::IDLE) return;
+    if (ui.writeConfirmPending) return;
 
     // Poll every 500ms
     if (millis() - last_poll < 500) return;
     last_poll = millis();
 
     if (rfid.checkTagPresent()) {
+        miss_count = 0;
         String current_uid = rfid.formatUID();
+
+        // Armed write: do it now, in the session that just selected the card.
+        if (ui.writeArmed) {
+            Serial.printf("RFID: Tag %s detected for write\n", current_uid.c_str());
+            ui.onTagForWrite();
+            last_uid = current_uid;
+            last_detection_time = millis();
+            last_read_failed = true;   // don't auto-read it until it's lifted and replaced
+            return;
+        }
 
         // After a failed read: require tag removal before retrying the same tag
         if (last_read_failed && current_uid == last_uid) return;
@@ -167,6 +180,12 @@ void rfid_task() {
                 feedback.readSuccess();
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
                 last_read_failed = false;
+            } else if (rfid.lastReadWasBlank()) {
+                // Blank tag is a normal state, not an error — don't lock the UI.
+                Serial.println("RFID: Blank tag");
+                ui.screenMain.setWriteStatus("Blank tag - ready to write", true, true);
+                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
+                last_read_failed = true;   // don't re-read it every 3 s
             } else {
                 Serial.println("RFID: Auto-Read failed (Auth/CRC) - retrying silently");
                 ui.screenMain.setWriteStatus("Reading...", false, false);
@@ -179,8 +198,9 @@ void rfid_task() {
             last_detection_time = millis();
             ui.updateButtonStates();
         }
-    } else {
-        // Tag removed — clear debounce and allow retry on next placement
+    } else if (++miss_count >= 3) {
+        // Tag removed — require 3 consecutive misses (~1.5 s); a single miss right
+        // after a failed auth was falsely reported as removal (cfs-tag-write-design.md bug C).
         if (!last_uid.isEmpty()) {
             Serial.println("RFID: Tag removed");
             last_uid = "";
@@ -228,10 +248,11 @@ void loop() {
     }
 
     feedback.update();
+    ui.writeTick();
 
     // ERROR state auto-dismiss: tick() fires TIMEOUT after auto_dismiss_ms
     if (sysState.tick()) {
-        ui.screenMain.setWriteStatus("Ready");
+        if (!ui.writeArmed) ui.screenMain.setWriteStatus("Ready");
         ui.updateButtonStates();
     }
 

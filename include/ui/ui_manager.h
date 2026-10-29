@@ -58,6 +58,21 @@ public:
     // P1.9: Operation lock & UI guards (FSD Section 12.5)
     void updateButtonStates();  // Enable/disable buttons based on sysState
 
+    // CFS tag write — "press Write, then place tag" (docs/rfid/cfs-tag-write-design.md).
+    // The write runs inside the detection session in rfid_task(); some blank cards
+    // can't be re-selected for seconds after a session, so we never write to a tag
+    // found earlier.
+    bool writeArmed = false;
+    bool writeConfirmPending = false;   // overwrite dialog open; rfid_task pauses auto-read
+    void armWrite(bool allowOverwrite);
+    void cancelWrite(const char* why);
+    void onTagForWrite();   // rfid_task(): tag detected while armed
+    void writeTick();       // loop(): disarm after timeout
+
+    // Dashboard brand/type dropdowns -> DB profile. Brand change keeps the brand (switching
+    // type if it has none of the current type); type change falls back to Generic <type>.
+    void selectMaterial(const char* brand, const char* type, bool brandChanged);
+
 private:
     // P1.9: Guard check — returns true if system is busy (not IDLE)
     static bool isSystemBusy();

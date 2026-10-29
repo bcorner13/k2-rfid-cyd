@@ -76,7 +76,9 @@ Fixed-length ASCII string (34+ chars) written to MIFARE Classic 1K via PN532:
 Entire string uppercased. Brand and filament name are **not stored** on tag. `SpoolData` in `include/spool_data.h` handles both construction paths (from `FilamentProfile` for writes, from raw string for reads).
 
 ### RFID sector layout (MIFARE Classic 1K)
-Sectors 0-15, 4 blocks/sector, 16 bytes/block. Key A derived from UID. Sectors 1-4 immutable (magic, identity, color, vendor), sector 5 write-once (initial weight), sectors 6-8 mutable mirrors (remaining filament), sector 9 usage counters, sector 15 CRC32. Full spec: `docs/rfid/creality-k2plus-rfid-spec.md`.
+Sectors 0-15, 4 blocks/sector, 16 bytes/block. **The K2 uses sector 1 only** (verified on a real spool 2026-10-28): blocks 4-6 = the CFS payload string, AES-128-ECB encrypted with `D_KEY`; block 7 trailer Key A = Key B = key derived from the UID. Blank tags use `FF×6` with factory access bits `FF 07 80`. Write design: `docs/rfid/cfs-tag-write-design.md`.
+
+The project's own extension (sector 5 init weight, 6-8 mirrors, 15 CRC, v2 sectors 10-13 via `readTag`/`writeTag`) is **not** part of the Creality format. `docs/rfid/creality-k2plus-rfid-spec.md` ("K2PF" magic) does not match real tags. `writeTag()` writes block 4 and would destroy a CFS payload.
 
 ### App config (`config.json` on LittleFS)
 JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
@@ -91,7 +93,7 @@ JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
 - Custom board definition in `boards/matouch_s3_43.json`
 - ArduinoJson v7 used for JSON parsing (uses PSRAM when available)
 - Material type is 5 chars space-padded on RFID tag; trimmed for UI matching
-- CFS tag format spec: `docs/rfid/creality-k2plus-rfid-spec.md`
+- CFS tag format: `docs/rfid/cfs-tag-write-design.md` (measured). `creality-k2plus-rfid-spec.md` is historical and inaccurate.
 
 ## Hardware Notes (MaTouch ESP32-S3 4.3")
 

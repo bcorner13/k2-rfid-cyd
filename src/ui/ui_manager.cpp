@@ -21,6 +21,129 @@
 
 UIManager ui;
 
+// --- CFS tag write (docs/rfid/cfs-tag-write-design.md) ---
+
+static constexpr uint32_t WRITE_ARM_TIMEOUT_MS = 30000;
+static bool     s_writeAllowOverwrite = false;
+static uint32_t s_writeArmedMs = 0;
+
+// Nearest plain color name for an RGB value (tags and the DB store hex only).
+static const char* colorName(uint32_t rgb) {
+    static const struct { const char* name; uint32_t rgb; } kColors[] = {
+        {"Black", 0x000000}, {"White", 0xFFFFFF}, {"Grey", 0x808080}, {"Silver", 0xC0C0C0},
+        {"Red", 0xE53935},   {"Orange", 0xFB8C00}, {"Yellow", 0xFDD835}, {"Gold", 0xC9A227},
+        {"Green", 0x43A047}, {"Lime", 0x9CCC65},  {"Teal", 0x00897B},   {"Blue", 0x1E88E5},
+        {"Navy", 0x1A237E},  {"Purple", 0x8E24AA}, {"Pink", 0xEC407A},  {"Brown", 0x795548},
+        {"Beige", 0xD7CCA1},
+    };
+    const char* best = kColors[0].name;
+    uint32_t bestDist = UINT32_MAX;
+    for (const auto& c : kColors) {
+        int dr = (int)((rgb >> 16) & 0xFF) - (int)((c.rgb >> 16) & 0xFF);
+        int dg = (int)((rgb >> 8) & 0xFF) - (int)((c.rgb >> 8) & 0xFF);
+        int db = (int)(rgb & 0xFF) - (int)(c.rgb & 0xFF);
+        uint32_t d = dr * dr + dg * dg + db * db;
+        if (d < bestDist) { bestDist = d; best = c.name; }
+    }
+    return best;
+}
+
+static void overwrite_confirm_cb(lv_event_t* e) {
+    ui.writeConfirmPending = false;
+    lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+    bool confirmed = (bool)(uintptr_t)lv_event_get_user_data(e);
+    lv_msgbox_close(lv_obj_get_parent(lv_obj_get_parent(btn)));   // button -> footer -> msgbox
+    if (confirmed) ui.armWrite(true);
+    else ui.cancelWrite("Write cancelled");
+}
+
+void UIManager::armWrite(bool allowOverwrite) {
+    if (currentSpool.getMaterialId().length() != 5) {
+        screenMain.setWriteStatus("Pick a filament first", false, false);
+        return;
+    }
+    writeArmed = true;
+    s_writeAllowOverwrite = allowOverwrite;
+    s_writeArmedMs = millis();
+    screenMain.setWriteStatus(allowOverwrite ? "Lift and place the tag again" : "Place tag to write...", true, true);
+}
+
+void UIManager::cancelWrite(const char* why) {
+    writeArmed = false;
+    screenMain.setWriteStatus(why);
+}
+
+void UIManager::writeTick() {
+    if (writeArmed && millis() - s_writeArmedMs > WRITE_ARM_TIMEOUT_MS) cancelWrite("Write cancelled (timeout)");
+}
+
+void UIManager::selectMaterial(const char* brand, const char* type, bool brandChanged) {
+    const FilamentProfile* match = nullptr;      // brand + type
+    const FilamentProfile* brandAny = nullptr;   // brand, any type
+    const FilamentProfile* generic = nullptr;    // Generic + type
+    for (const auto& p : filamentDB.getCache()) {
+        if (p.brand == brand) {
+            if (!brandAny) brandAny = &p;
+            if (!match && p.material_type == type) match = &p;
+        }
+        if (!generic && p.brand == "Generic" && p.material_type == type) generic = &p;
+    }
+    const FilamentProfile* pick = match ? match : (brandChanged ? brandAny : generic);
+    if (!pick) {
+        screenMain.setWriteStatus("No profile for that material", false, false);
+        return;
+    }
+    SpoolData sd(*pick);
+    sd.setColor(currentSpool.getColorHex());      // keep the user's color and weight
+    sd.setWeight(currentSpool.getWeight());
+    updateDashboardFromSpool(sd);
+    char msg[64];
+    if (match) snprintf(msg, sizeof(msg), "Selected %s", pick->name.c_str());
+    else       snprintf(msg, sizeof(msg), "No %s %s in DB - using %s", brand, type, pick->name.c_str());
+    screenMain.setWriteStatus(msg, match != nullptr, match != nullptr);
+}
+
+void UIManager::onTagForWrite() {
+    writeArmed = false;
+    sysState.handleEvent(SystemEvent::WRITE_REQUEST);
+    updateButtonStates();
+    screenMain.setWriteStatus("Writing...");
+    lv_refr_now(NULL);   // the write blocks the UI loop; show the status first
+
+    SpoolData existing;
+    CfsWriteResult r = rfid.writeCFSTag(currentSpool, s_writeAllowOverwrite, &existing);
+    Serial.printf("UI: CFS write -> %s\n", cfsWriteResultText(r));
+
+    if (r == CfsWriteResult::OK) {
+        screenMain.setWriteStatus(cfsWriteResultText(r), true, false);
+        sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);   // WRITING -> VERIFYING
+        sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);   // VERIFYING -> IDLE (verified inside writeCFSTag)
+        feedback.writeSuccess();
+    } else if (r == CfsWriteResult::NEEDS_CONFIRM) {
+        sysState.handleEvent(SystemEvent::USER_DISMISS);        // WRITING -> IDLE; nothing written
+        screenMain.setWriteStatus(cfsWriteResultText(r), false, true);
+        // e.g. "Creality CR-Silk\nColor #000000  -  1000 g"
+        const std::string name = existing.getDisplayName().empty()
+            ? ("Material " + existing.getMaterialId()) : (existing.getBrand() + " " + existing.getDisplayName());
+        char msg[160];
+        snprintf(msg, sizeof(msg), "This tag already holds:\n\n%s\n%s (%s)  -  %u g\n\nReplace it with the selected filament?",
+                 name.c_str(), colorName(existing.getColorHex()), existing.getColorName().c_str(), existing.getWeight());
+        writeConfirmPending = true;
+        lv_obj_t* mbox = lv_msgbox_create(NULL);
+        lv_msgbox_add_title(mbox, "Overwrite tag?");
+        lv_msgbox_add_text(mbox, msg);
+        lv_obj_t* yes = lv_msgbox_add_footer_button(mbox, "Overwrite");
+        lv_obj_t* no  = lv_msgbox_add_footer_button(mbox, "Cancel");
+        lv_obj_add_event_cb(yes, overwrite_confirm_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)true);
+        lv_obj_add_event_cb(no,  overwrite_confirm_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)false);
+    } else {
+        screenMain.setWriteStatus(cfsWriteResultText(r), false, false);
+        sysState.handleEvent(SystemEvent::OPERATION_FAILED);
+        feedback.operationFailed();
+    }
+    updateButtonStates();
+}
+
 UIManager::UIManager() {
 
 }
@@ -59,7 +182,10 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenMain.btnLibrary, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnInventory, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);   // dropped in fb35184
     lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenMain.ddBrand, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenMain.ddType, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_add_event_cb(screenSettings.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnAbout, event_handler, LV_EVENT_CLICKED, NULL);
@@ -84,9 +210,14 @@ void UIManager::init() {
     createColorPicker();
     createOverlay();
 
-    FilamentProfile defaultProfile("0", "Generic", "Generic PLA", "PLA", 0xFFFFFF, "#FFFFFF", 210, 60);
-    SpoolData defaultSpool(defaultProfile);
-    updateDashboardFromSpool(defaultSpool);
+    // Default to the real DB Generic PLA so the dashboard carries a valid material ID
+    // ("00001"); the old placeholder had id "0" and every Write failed with no material.
+    FilamentProfile defaultProfile;
+    if (filamentDB.getProfileById("00001", defaultProfile)) {
+        updateDashboardFromSpool(SpoolData(defaultProfile));
+    } else {
+        screenMain.setWriteStatus("Pick a filament", false, true);
+    }
 
     showMainScreen();
     updateButtonStates(); // 🟢 Ensure icons are active on boot
@@ -198,22 +329,8 @@ void UIManager::event_handler(lv_event_t* e) {
 
         if (obj == ui.screenMain.btnWrite) {
             Serial.println("UI: Write RFID triggered");
-            sysState.handleEvent(SystemEvent::WRITE_REQUEST);
-            ui.screenMain.setWriteStatus("Writing...");
-            ui.updateButtonStates();
-
-            if (rfid.writeCFSTag(ui.currentSpool)) {
-                Serial.println("UI: Write RFID Success");
-                ui.screenMain.setWriteStatus("Write OK", true, false);
-                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
-                feedback.writeSuccess();
-            } else {
-                Serial.println("UI: Write RFID Failed");
-                ui.screenMain.setWriteStatus("Write failed", false, false);
-                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
-                feedback.operationFailed();
-            }
-            ui.updateButtonStates(); // 🟢 Refresh buttons after op finished
+            if (ui.writeArmed) ui.cancelWrite("Write cancelled");   // second press disarms
+            else ui.armWrite(false);
         }
         else if (obj == ui.screenMain.btnLibrary) {
             ui.showFilamentLibrary();
@@ -284,8 +401,17 @@ void UIManager::event_handler(lv_event_t* e) {
             writeData.setType(rec->material_type.c_str());
             writeData.setColor(strtoul(rec->color_hex.c_str(), nullptr, 16));
             writeData.setWeight(rec->current_weight_g);
+            // SpoolRecord has no DB id; resolve it by brand + name for the tag's material field.
+            for (const auto& p : filamentDB.getCache()) {
+                if (p.brand == rec->brand && p.name == rec->name) { writeData.setMaterialId(p.id.c_str()); break; }
+            }
 
-            if (rfid.writeCFSTag(writeData)) {
+            // TODO: move to the armed flow; until then this refuses (NEEDS_CONFIRM) rather
+            // than overwrite an existing spool without asking.
+            CfsWriteResult wr = rfid.writeCFSTag(writeData, false);
+            Serial.printf("Spool detail write -> %s\n", cfsWriteResultText(wr));
+            if (wr == CfsWriteResult::OK) {
+                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);   // WRITING -> VERIFYING
                 sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
                 feedback.writeSuccess();
                 Serial.printf("Tag written for spool %s\n", rec->spool_id.c_str());
@@ -445,6 +571,13 @@ void UIManager::event_handler(lv_event_t* e) {
             ui.currentSpool.setWeight(weight);
             lv_label_set_text_fmt(ui.screenMain.labelWeight, "%dg", weight);
         }
+        else if (obj == ui.screenMain.ddBrand || obj == ui.screenMain.ddType) {
+            if (isSystemBusy()) return;
+            char brand[48], type[24];
+            lv_dropdown_get_selected_str(ui.screenMain.ddBrand, brand, sizeof(brand));
+            lv_dropdown_get_selected_str(ui.screenMain.ddType, type, sizeof(type));
+            ui.selectMaterial(brand, type, obj == ui.screenMain.ddBrand);
+        }
         else if (obj == ui.screenSettings.swBeep) {
             config.data.beep_enabled = lv_obj_has_state(obj, LV_STATE_CHECKED);
             config.save();
@@ -456,7 +589,9 @@ void UIManager::showMainScreen() {
     updateDashboardFromSpool(currentSpool);
     // Don't clear the status label when in ERROR — preserve the error message
     // so the user can see it and tap to dismiss.
-    if (sysState.getCurrentState() != SystemState::ERROR) {
+    if (writeArmed) {
+        screenMain.setWriteStatus(s_writeAllowOverwrite ? "Lift and place the tag again" : "Place tag to write...", true, true);
+    } else if (sysState.getCurrentState() != SystemState::ERROR) {
         screenMain.setWriteStatus("Ready");
     }
     screenMain.show();

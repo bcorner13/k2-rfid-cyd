@@ -69,10 +69,23 @@ bool FilamentDB::loadDatabase() {
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     /* ----------------------------------------------------
-       ArduinoJson v7 document (NO custom allocator)
-       ESP32 will allocate from PSRAM automatically
+       ArduinoJson v7 document in PSRAM. Without the allocator, its small
+       blocks went to internal RAM: the 711 KB printer DB drove internal
+       MinFree to 1.2 KB at boot.
        ---------------------------------------------------- */
-    JsonDocument doc;
+    JsonDocument doc(&psramAllocator);
+
+    // Keep only the fields read below; printer entries carry dozens more.
+    JsonDocument filter(&psramAllocator);
+    JsonObject fBase = filter["result"]["list"][0]["base"].to<JsonObject>();
+    fBase["id"] = true;
+    fBase["brand"] = true;
+    fBase["name"] = true;
+    fBase["meterialType"] = true;
+    fBase["colors"] = true;
+    JsonObject fKv = filter["result"]["list"][0]["kvParam"].to<JsonObject>();
+    fKv["nozzle_temperature"] = true;
+    fKv["hot_plate_temp"] = true;
 
     /* ----------------------------------------------------
        Temporarily remove task from WDT
@@ -85,6 +98,7 @@ bool FilamentDB::loadDatabase() {
 
     DeserializationError error =
         deserializeJson(doc, file,
+            DeserializationOption::Filter(filter),
             DeserializationOption::NestingLimit(20));
 
     uint32_t dt = millis() - t0;
