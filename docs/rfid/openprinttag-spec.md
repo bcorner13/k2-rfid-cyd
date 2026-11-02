@@ -69,4 +69,4 @@ The PN532 on the MaTouch board **cannot** read or write OpenPrintTag. An earlier
 1. **Second reader for NFC-V:** an NXP PN7160 or ST ST25R3916 module (both handle ISO 14443A *and* ISO 15693, so one could eventually replace the PN532). Needs a new driver; the Adafruit PN532 library won't help.
 2. **No device-side OpenPrintTag:** the Prusa printer reads and writes its own tags. The device only needs to see Prusa spools through Spoolman (ADR-001), not handle their tags.
 
-Option 2 costs nothing and may be enough. Decide after the Core One L+ arrives and we see what it reports over its API (PrusaLink/Prusa Connect) about loaded spools.
+**Decision (2026-11-02): option 2.** No reader change. An earlier PN5180 attempt (over a year ago) failed on bus availability and writing, and a reader swap would mean new hardware and rewriting the working MIFARE path.

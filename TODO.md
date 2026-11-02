@@ -263,20 +263,13 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
 - **OpenPrintTag (Prusa Core One L+, arriving week of 2026-11-02)** — open NFC standard
   (https://openprinttag.org). Notes: `docs/rfid/openprinttag-spec.md`. **The PN532 cannot read these
   tags**: they are ISO 15693 / NFC-V (ICODE SLIX2), and the PN532 only does ISO 14443A/B + FeliCa
-  (NXP datasheet, verified 2026-11-02). Device support would need a PN7160 or ST25R3916 reader.
-  First step: see what the printer itself exposes about loaded spools, and feed that into Spoolman.
-  - **Reader option: NXP PN5180** (~$10 hobby modules). ISO 14443A *and* ISO 15693, so one reader
-    could serve both K2 (MIFARE Classic) and Prusa (ICODE SLIX2) tags, with Arduino libraries for
-    both (from memory — verify datasheet + library before buying). **Constraint: keep the MaTouch
-    ESP32-S3 board** (4th board tried; reader swap only, no compute-module change). Open questions:
-    - SPI-only, ~6 pins (MOSI/MISO/SCK/NSS + BUSY + RST). The MaTouch SPI bus is taken by the SD card
-      (GPIO10–13): share it with a separate CS? Which GPIOs are actually free on V3.1?
-    - Replace the PN532 entirely (rewrite the MIFARE Classic auth/read/write path on the PN5180), or
-      run both readers (PN532 on I2C for K2, PN5180 on SPI for Prusa)?
-    - Only worth doing if the Prusa's own API doesn't give Spoolman what it needs.
-    - **Prior attempt:** Bradley recalls trying PN5180 modules before and they "didn't work" — cause
-      unknown, no record in this repo, its git history, or Claude session logs (searched 2026-11-02).
-      Modules should be in the parts drawer. Find out why they failed before buying more.
+  (NXP datasheet, verified 2026-11-02). First step: see what the Prusa exposes about loaded spools (PrusaLink / Prusa Connect), and feed
+  that into Spoolman.
+  - **Decision 2026-11-02: no device-side OpenPrintTag.** Prusa spools reach Spoolman through the
+    printer's own API, not through this device's reader. The device stays MaTouch + PN532 (K2 tags).
+    - **PN5180 rejected:** tried over a year ago and failed (bus availability / write problems).
+      Adding it now means new hardware plus a rewrite of the working MIFARE path, likely ending up
+      worse than today. Don't reopen unless the Prusa's API can't feed Spoolman and Bradley asks.
 - **PCF8563 RTC driver** — no driver exists yet. Use for inventory/write-log timestamps. The CFS
   date code stays `AB124`: its encoding is undecoded (a real spool has `2C525`) and the printer
   appears to ignore it.
