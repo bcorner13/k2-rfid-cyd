@@ -260,15 +260,22 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
 
 ## 🔭 Future / Non-Blocking
 
-- **OpenPrintTag (Prusa Core One L+)** — open RFID standard (https://openprinttag.org). Reference
-  notes in `docs/rfid/openprinttag-spec.md` (written 2026-03, re-check against the current spec).
-  Read support first, then write.
+- **OpenPrintTag (Prusa Core One L+, arriving week of 2026-11-02)** — open NFC standard
+  (https://openprinttag.org). Notes: `docs/rfid/openprinttag-spec.md`. **The PN532 cannot read these
+  tags**: they are ISO 15693 / NFC-V (ICODE SLIX2), and the PN532 only does ISO 14443A/B + FeliCa
+  (NXP datasheet, verified 2026-11-02). Device support would need a PN7160 or ST25R3916 reader.
+  First step: see what the printer itself exposes about loaded spools, and feed that into Spoolman.
 - **PCF8563 RTC driver** — no driver exists yet. Use for inventory/write-log timestamps. The CFS
   date code stays `AB124`: its encoding is undecoded (a real spool has `2C525`) and the printer
   appears to ignore it.
 
-- Printer integration: auto-update remaining filament weight from OctoPrint / Klipper / Creality Cloud
-- Multi-printer support (track which spool is in which printer)
+- Printer integration: auto-update remaining filament weight. **K2 (2026-11-02):** Moonraker
+  `:7125` (no auth) exposes CFS slot state via `GET /printer/objects/query?box&filament_rack` —
+  `material_type[]`, `color_value[]`, `vender[]`, `remain_len[]` per box `T1..T4`, plus the raw tag
+  string of the external spool in `filament_rack.vender`. `remain_len` was `0` for both loaded
+  (non-RFID) slots, and the rack tag string did not change during a print, so the remaining-amount
+  source is still open (Milestone 2). See CLAUDE.md "Environment / access".
+- Multi-printer support (track which spool is in which printer): K2 Plus + Prusa Core One L+.
 - Statistics dashboard: consumption trends from SD card usage logs
 - Export/import inventory via USB or WiFi download
 - NeoPixel RGB status LED option (single-pin, replaces separate red/green LEDs)

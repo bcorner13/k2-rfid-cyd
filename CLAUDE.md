@@ -22,6 +22,13 @@ pio device monitor               # Serial monitor (115200 baud)
 
 Build requires C++17. Full builds may take 2+ minutes due to linking. The board has two USB-C ports — use the **UART** port for upload/monitor.
 
+## Environment / access (verified 2026-11-02)
+
+- **Spoolman:** `http://spoolman.lan:7912/api/v1/` (resolves to `192.0.2.97`, the Home Assistant Pi). v0.27.0, SQLite, no auth. SpoolmanDB external catalog is reachable (`GET /external/filament`, ~9.4k entries).
+- **K2 Plus:** printer hostname `K2Plus-XXXX`, Wi-Fi only (Ethernet never used), MAC `XX:XX:XX:XX:XX:XX`. DNS name **`printer.lan`** → `192.0.2.106` via a router DHCP reservation (set 2026-11-02). The old reservation had a MAC (`XX:XX:XX:XX:XX:XX`) that no longer exists on the LAN, so for a while the printer got `.107` from the pool. **Pending:** the printer only moves to `.106` after it reconnects (reboot after the current print); until then it's still at `.107`. If it's ever unreachable, scan: `nc -z -G1 192.0.2.$i 7125`.
+  - **Moonraker** on `:7125`, no auth. `GET /printer/objects/query?box&filament_rack&print_stats` returns the CFS state per box `T1..T4` (`material_type[]`, `color_value[]`, `vender[]`, `remain_len[]`, `sn`, `uuid`) and the external rack (`filament_rack.vender` = the raw 40-char tag payload string). Read-only queries are safe during a print; don't send gcode while `print_stats.state == printing`.
+  - Creality web UI on `:4408`. **SSH** on `:22`, (login details: CLAUDE.local.md).
+
 ## Architecture
 
 ### Boot sequence (main.cpp)
