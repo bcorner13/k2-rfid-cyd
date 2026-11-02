@@ -274,6 +274,9 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
     - Replace the PN532 entirely (rewrite the MIFARE Classic auth/read/write path on the PN5180), or
       run both readers (PN532 on I2C for K2, PN5180 on SPI for Prusa)?
     - Only worth doing if the Prusa's own API doesn't give Spoolman what it needs.
+    - **Prior attempt:** Bradley recalls trying PN5180 modules before and they "didn't work" — cause
+      unknown, no record in this repo, its git history, or Claude session logs (searched 2026-11-02).
+      Modules should be in the parts drawer. Find out why they failed before buying more.
 - **PCF8563 RTC driver** — no driver exists yet. Use for inventory/write-log timestamps. The CFS
   date code stays `AB124`: its encoding is undecoded (a real spool has `2C525`) and the printer
   appears to ignore it.
