@@ -265,6 +265,15 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
   tags**: they are ISO 15693 / NFC-V (ICODE SLIX2), and the PN532 only does ISO 14443A/B + FeliCa
   (NXP datasheet, verified 2026-11-02). Device support would need a PN7160 or ST25R3916 reader.
   First step: see what the printer itself exposes about loaded spools, and feed that into Spoolman.
+  - **Reader option: NXP PN5180** (~$10 hobby modules). ISO 14443A *and* ISO 15693, so one reader
+    could serve both K2 (MIFARE Classic) and Prusa (ICODE SLIX2) tags, with Arduino libraries for
+    both (from memory — verify datasheet + library before buying). **Constraint: keep the MaTouch
+    ESP32-S3 board** (4th board tried; reader swap only, no compute-module change). Open questions:
+    - SPI-only, ~6 pins (MOSI/MISO/SCK/NSS + BUSY + RST). The MaTouch SPI bus is taken by the SD card
+      (GPIO10–13): share it with a separate CS? Which GPIOs are actually free on V3.1?
+    - Replace the PN532 entirely (rewrite the MIFARE Classic auth/read/write path on the PN5180), or
+      run both readers (PN532 on I2C for K2, PN5180 on SPI for Prusa)?
+    - Only worth doing if the Prusa's own API doesn't give Spoolman what it needs.
 - **PCF8563 RTC driver** — no driver exists yet. Use for inventory/write-log timestamps. The CFS
   date code stays `AB124`: its encoding is undecoded (a real spool has `2C525`) and the printer
   appears to ignore it.
