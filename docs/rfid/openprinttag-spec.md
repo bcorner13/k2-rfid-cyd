@@ -30,7 +30,7 @@ OpenPrintTag is Prusa Research's open-source NFC tag standard for smart filament
 | Orientation | 360° readable (circular tag layout) |
 | Max spool weight | 2 kg |
 
-> **Contrast with Creality CFS:** CFS uses ISO 14443-A (MIFARE Classic 1K) at 13.56 MHz — a different tag family to OpenPrintTag's ISO 15693. The PN532 supports both, but they use different commands.
+> **Contrast with Creality CFS:** CFS uses ISO 14443-A (MIFARE Classic 1K) at 13.56 MHz — a different tag family to OpenPrintTag's ISO 15693. **The PN532 does not support ISO 15693** (verified 2026-11-02 against the NXP PN532 datasheet: reader/writer modes are ISO 14443A/MIFARE, ISO 14443B and FeliCa only). Prusa's official tags are NXP ICODE SLIX2 (ISO 15693, ~316 usable bytes). Data is an NDEF record (`application/vnd.openprinttag`) holding CBOR maps; that layout is from a community implementation, so check it against the official repo.
 
 ---
 
@@ -64,10 +64,9 @@ Full byte-level memory map: https://specs.openprinttag.org
 
 ## Relevance to This Project
 
-The PN532 on the MaTouch board supports ISO 15693 via the `inJumpForDEP` / `inListPassiveTarget` command path. Adding OpenPrintTag read support would allow this programmer to:
+The PN532 on the MaTouch board **cannot** read or write OpenPrintTag. An earlier version of this doc said it could via `inListPassiveTarget`; that was wrong (corrected 2026-11-02, see Hardware above). Options:
 
-1. Detect whether a presented tag is a Creality CFS tag (ISO 14443-A) or an OpenPrintTag (ISO 15693)
-2. Display material info from either format
-3. Potentially write OpenPrintTag-formatted tags for use with Prusa printers
+1. **Second reader for NFC-V:** an NXP PN7160 or ST ST25R3916 module (both handle ISO 14443A *and* ISO 15693, so one could eventually replace the PN532). Needs a new driver; the Adafruit PN532 library won't help.
+2. **No device-side OpenPrintTag:** the Prusa printer reads and writes its own tags. The device only needs to see Prusa spools through Spoolman (ADR-001), not handle their tags.
 
-This would require the Adafruit PN532 library's low-level RF commands or a separate ISO 15693 driver, since the high-level `readPassiveTargetID()` call only handles ISO 14443-A.
+Option 2 costs nothing and may be enough. Decide after the Core One L+ arrives and we see what it reports over its API (PrusaLink/Prusa Connect) about loaded spools.
