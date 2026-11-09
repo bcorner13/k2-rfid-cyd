@@ -1,7 +1,7 @@
 # Spoolman Integration — Design Draft
 
 **Status:** Draft (2026-10-29). Implements [ADR-001](ADR-001-inventory-in-spoolman.md).
-**Spoolman version targeted:** v0.27.0 or later (needed for tag-UID linking). API facts below come from the v0.27.0 source (`spoolman/api/v1/{models,spool}.py`, `spoolman/tags.py`). Re-check if the server version differs.
+**Spoolman version targeted:** v0.27.0 or later (needed for tag-UID linking). The live server runs v0.27.1 (from its startup log, 2026-11-05). The lookup below was re-checked against the v0.27.1 source (`spoolman/api/v1/{models,spool,tag}.py`). Re-check if the server version differs.
 
 ## Spoolman data model (fields we use)
 
@@ -19,11 +19,16 @@
 ### 1. Tag placed (auto-read): look up
 ```
 read CFS tag (existing readCFSTag) -> UID + payload
-GET /api/v1/spool?tag=<UID>
-  200 + 1 spool  -> dashboard shows Spoolman spool: name, color, remaining_weight, location
-  200 + []       -> "Not in inventory - Add?"  (flow 2)
-  unreachable    -> show tag data only (today's behavior), status "Spoolman offline"
+GET /api/v1/spool?tag=<UID>&allow_archived=true
+  200 + spool carrying this UID -> Spoolman line shows id, vendor + name, remaining_weight, location
+  200 + []                      -> "Not in Spoolman"  (phase 2 adds "Add?", flow 2)
+  200 + spool without this UID  -> "Spoolman error", never shown as the tag's spool
+  unreachable or DNS failure    -> show tag data only (today's behavior), "Spoolman offline"
 ```
+- `allow_archived=true`: without it, a tag on an archived spool looks unknown, and linking it would then hit a 409.
+- The result has its own line on the main screen, because auto-read re-fires every 3 s and rewrites the status text. Only one lookup runs per placement: lift and replace the tag to look it up again.
+- A tag linked to a filament rather than a spool shows as "Not in Spoolman" here. Linking it in phase 2 reports the holder through the 409.
+- **Alternative for later:** `POST /api/v1/tag/scan` also resolves a UID (spool or filament) and broadcasts the scan to Spoolman's websocket clients. It is a POST with a side effect, so phase 1 doesn't use it. Consider it for phase 2.
 
 ### 2. Add unknown tag to inventory
 ```
@@ -74,8 +79,10 @@ not yet seen) or from a manual assignment made on the device.
 
 ## Device changes
 
-- Config: `spoolman_url` (e.g. `http://homeassistant.local:7912`), set via the WiFi portal or Settings.
-- `SpoolmanClient` (new): small blocking HTTP+JSON wrapper. Runs between RFID sessions, never inside one. Use ArduinoJson with the PSRAM allocator and a response filter.
+- Config: `spoolman_url` (default `http://spoolman.lan:7912`, blank = off), set via the WiFi portal. `https://` is recognized but reports "not supported yet": it needs a TLS client and certificate handling, as a separate step, and is never silently downgraded.
+- **DNS:** this LAN's first DNS server is the Pi that hosts Spoolman (`192.0.2.97`), so `spoolman.lan` stops resolving when the Pi is down. Set an IP in the portal if that becomes a problem.
+- `SpoolmanClient` (`src/spoolman_client.cpp`): HTTP runs on its own FreeRTOS task with short timeouts, because DNS can block well past the connect timeout. It talks to the main loop through single-slot queues and never touches LVGL or RFID. Parsing is in `include/spoolman_parse.h`, tested on the host with `pio test -e native`.
+- **Unverified for phase 2:** v0.27.1 logs "Trusting writes and websockets from this instance's own origin only". Confirm a device POST with no `Origin` header is accepted before building add/link.
 - Replace `InventoryManager` usage in `ui_manager.cpp` (Scan Tag, Spool Detail, Custom Entry). Remove `InventoryManager` once the replacement works.
 - Spool Detail "Write Tag" moves to the armed write flow at the same time.
 

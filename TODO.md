@@ -201,6 +201,8 @@ today the closest option is Generic `<type>`.
 Design: `docs/architecture/spoolman-integration.md`. Spoolman v0.27+ on the Home Assistant Pi links
 tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, format `"creality"`).
 1. Config `spoolman_url` + `SpoolmanClient`. Look up the spool on auto-read (read-only).
+   Implemented on `feat/spoolman-lookup` (2026-11-05). **Hardware test against live Spoolman still pending.**
+   No local database or periodic sync (ADR-001, open question 2).
 2. Add unknown tag → create/link spool. After a write, offer to link or update.
 3. Inventory screen lists Spoolman spools. Remove `InventoryManager` / `inventory.json`.
 4. Push printer remaining amount to Spoolman (after the Milestone 2 remaining-amount investigation).

@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include <filament_db.h>
 #include <config_manager.h>
+#include <spoolman_parse.h>
 #include "mbedtls/sha256.h"
 
 AppNetwork network;
@@ -17,9 +18,13 @@ void AppNetwork::init() {
     wm.setSaveParamsCallback([this]() {
         if (this->custom_printer_ip) {
             config.data.printer_ip = this->custom_printer_ip->getValue();
-            config.save();
-            Serial.println("Printer IP saved from WiFi Portal");
         }
+        if (this->custom_spoolman_url) {
+            config.data.spoolman_url = this->custom_spoolman_url->getValue();
+            config.data.spoolman_url.trim();
+        }
+        config.save();
+        Serial.println("Printer IP and Spoolman URL saved from WiFi Portal");
     });
 }
 
@@ -43,6 +48,11 @@ void AppNetwork::startConfigPortal() {
     if (!custom_printer_ip) {
         custom_printer_ip = new WiFiManagerParameter("printer_ip", "Printer IP", config.data.printer_ip.c_str(), 40);
         wm.addParameter(custom_printer_ip);
+    }
+    if (!custom_spoolman_url) {
+        custom_spoolman_url = new WiFiManagerParameter("spoolman_url", "Spoolman URL (blank = off)",
+                                                       config.data.spoolman_url.c_str(), spoolman::BASE_URL_BUF - 1);
+        wm.addParameter(custom_spoolman_url);
     }
 
     wm.setTitle("K2 RFID Tool Setup");

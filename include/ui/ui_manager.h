@@ -53,7 +53,14 @@ public:
     void showRfidRawScreen();
     void closeColorPicker();   // public: swatch callbacks are free functions
 
-    void updateDashboardFromSpool(const SpoolData& data);
+    // Anything but a tag read means the dashboard no longer describes the tag, so the Spoolman
+    // line is cleared unless keepSpoolmanInfo is set.
+    void updateDashboardFromSpool(const SpoolData& data, bool keepSpoolmanInfo = false);
+
+    // Spoolman lookup (read-only). spoolmanOnTagRead() starts it; spoolmanTick() shows the result.
+    void spoolmanOnTagRead(const String& uid);
+    void spoolmanTick();
+    void clearSpoolmanInfo();
     void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
 
     // P1.9: Operation lock & UI guards (FSD Section 12.5)

@@ -18,13 +18,14 @@ pio run -t upload                # Build and flash via UART USB-C port
 pio run -t uploadfs              # Upload LittleFS filesystem image
 pio run -e matouch_s3_43         # Build for explicit environment
 pio device monitor               # Serial monitor (115200 baud)
+pio test -e native               # Host unit tests for pure logic (Spoolman parsing)
 ```
 
 Build requires C++17. Full builds may take 2+ minutes due to linking. The board has two USB-C ports — use the **UART** port for upload/monitor.
 
 ## Environment / access (verified 2026-11-02)
 
-- **Spoolman:** `http://spoolman.lan:7912/api/v1/` (resolves to `192.0.2.97`, the Home Assistant Pi). v0.27.0, SQLite, no auth. SpoolmanDB external catalog is reachable (`GET /external/filament`, ~9.4k entries).
+- **Spoolman:** `http://spoolman.lan:7912/api/v1/` (resolves to `192.0.2.97`, the Home Assistant Pi). v0.27.1 as of 2026-11-05, SQLite, no auth, plain HTTP on its own port. SpoolmanDB external catalog is reachable (`GET /external/filament`, ~9.4k entries). **The Pi is also the first DNS server on this LAN:** when it is down or rebooting, `.lan` names like `spoolman.lan` stop resolving, and the router returned nothing for that name, so test by IP before concluding anything else is wrong.
 - **K2 Plus:** printer hostname `K2Plus-XXXX`, Wi-Fi only (Ethernet never used), MAC `XX:XX:XX:XX:XX:XX`. DNS name **`printer.lan`** → `192.0.2.106` via a router DHCP reservation (set 2026-11-02). The old reservation had a MAC (`XX:XX:XX:XX:XX:XX`) that no longer exists on the LAN, so for a while the printer got `.107` from the pool. **Pending:** the printer only moves to `.106` after it reconnects (reboot after the current print); until then it's still at `.107`. **Still `.107` on 2026-11-09**, and `printer.lan` did not resolve from this Mac that day. If it's ever unreachable, scan: `nc -z -G1 192.0.2.$i 7125`.
   - **Moonraker** on `:7125`, no auth. `GET /printer/objects/query?box&filament_rack&print_stats` returns the CFS state per box `T1..T4` (`material_type[]`, `color_value[]`, `vender[]`, `remain_len[]`, `sn`, `uuid`) and the external rack (`filament_rack.vender` = the raw 40-char tag payload string). Read-only queries are safe during a print; don't send gcode while `print_stats.state == printing`.
   - `box.Tn.measuring_wheel` = per-box filament odometer (~mm, negative = feed). Moonraker file API (read-only GET) serves `config/box.cfg` and `logs/klippy.log*`. The daily logs are ~115 MB, so stream them through `grep`.
@@ -50,6 +51,7 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 | **Config** | `src/config_manager.cpp` | Persistent config (beep, WiFi) via LittleFS `config.json` |
 | **Network** | `src/network_manager.cpp` | WiFiManager portal, filament DB updates |
 | **State** | `src/system_state.cpp` | SystemState/SystemEvent enums with StateMachine transitions |
+| **Spoolman** | `src/spoolman_client.cpp`, `include/spoolman_client.h`, `include/spoolman_parse.h` | Read-only lookup by tag UID on its own FreeRTOS task; results polled from `loop()`. Parsing is host-testable |
 
 ### Data flow
 1. **Startup:** LittleFS → FilamentDB parses JSON → cache of `FilamentProfile`

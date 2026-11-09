@@ -7,6 +7,7 @@ struct AppConfig {
     bool write_empty_only = true;
     bool clone_serial = false;
     String printer_ip = "192.168.1.100";
+    String spoolman_url = "http://spoolman.lan:7912";  // Empty = Spoolman lookups disabled
 
     // P1.10: Database update metadata (FSD Section 5.6)
     String db_hash;                 // SHA-256 hex of last downloaded DB

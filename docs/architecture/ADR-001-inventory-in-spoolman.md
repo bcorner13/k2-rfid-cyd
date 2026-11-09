@@ -31,7 +31,11 @@
 ## Open questions
 
 1. Where printer → Spoolman sync runs: on the device, or on the Pi/laptop (which can SSH to the printer directly, avoiding SSH on the ESP32).
-2. Offline behavior: tag read/write must keep working without Spoolman. Should lookups and links be queued and replayed later?
+2. ~~Offline behavior~~ **Decided 2026-11-05: no local database or periodic sync.** An SD/SQLite copy would create a second editable inventory, needing conflict rules against edits in Spoolman's web UI, and would show stale weights as fact. The firmware also has no SD or SQLite support today. Instead:
+   - Tag read and write never depend on Spoolman. When it is unreachable, including when DNS fails, the device shows "Spoolman offline" and carries on. HTTP runs on its own task so the UI can't hang.
+   - A full inventory is a device "inventory session" (scan spool after spool) working live against Spoolman, not a local inventory synced afterwards.
+   - If real-world outages justify it, add a small append-only list of pending scans (tag UID + material) and replay it through the normal link flow. It only adds items, so it can't conflict the way a second database can. Not built yet: decide from how often Spoolman is actually down in normal use.
+   - SD remains a candidate for logs and backups, not inventory.
 3. Mapping CFS material id (`01001`, `P7003`, …) to a Spoolman filament. Candidates are `filament.external_id`, or an `extra` field such as `cfs_material_id`. Matching by vendor + name is the fallback.
 4. Whether the K2's remaining-amount estimate is keyed to the tag serial or UID (TODO, Milestone 2). This affects whether the device should keep the serial stable on rewrites.
 5. **Spoolman MCP server:** github.com/Disane87/spoolman-mcp (TypeScript, MIT; reviewed 2026-10-29 at the commit pushed 2026-08-15). It is a thin REST wrapper (axios) with 34 `spoolman_*` tools, configured by `SPOOLMAN_URL` and an optional `SPOOLMAN_API_KEY`. It has no shell or file access. It includes destructive `spoolman_delete_{spool,filament,vendor,field}`: gate those with `permissions.ask` after confirming the names on the loaded server. **It has no tag-UID tools** (it predates Spoolman v0.27), so tag linking still needs direct API calls. Useful for inspecting and curating inventory from Claude Code sessions.

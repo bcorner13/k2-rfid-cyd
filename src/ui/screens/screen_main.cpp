@@ -203,6 +203,13 @@ void ScreenMain::init() {
         lv_obj_set_style_text_font(btnmWeight, &lv_font_montserrat_20, LV_PART_ITEMS);
     }
 
+    labelSpoolman = lv_label_create(rightPanel);
+    lv_label_set_text(labelSpoolman, "");
+    lv_obj_set_width(labelSpoolman, LV_PCT(100));
+    lv_label_set_long_mode(labelSpoolman, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(labelSpoolman, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(labelSpoolman, lv_color_hex(0x606060), 0);
+
     /* --- Bottom region: status + Read, Write, Library, Settings (row 3) --- */
     lv_obj_t* bottomArea = lv_obj_create(screen);
     lv_obj_set_style_bg_color(bottomArea, lv_color_hex(0xE8E8E8), 0);
@@ -266,6 +273,11 @@ void ScreenMain::setWriteStatus(const char* status, bool success, bool neutral) 
         lv_obj_set_style_text_color(labelWriteStatus, lv_color_hex(0xFF5252), 0);
     }
     lv_obj_invalidate(labelWriteStatus);
+}
+
+void ScreenMain::setSpoolmanInfo(const char* text, uint32_t color) {
+    lv_label_set_text(labelSpoolman, text);
+    lv_obj_set_style_text_color(labelSpoolman, lv_color_hex(color), 0);
 }
 
 void ScreenMain::updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid) {

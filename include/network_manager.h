@@ -35,6 +35,7 @@ private:
     HTTPClient http;
     WiFiManager wm;
     WiFiManagerParameter* custom_printer_ip{nullptr};
+    WiFiManagerParameter* custom_spoolman_url{nullptr};
     String _lastError;
 
     // P1.10: SHA-256 hash of data buffer, returned as 64-char hex string

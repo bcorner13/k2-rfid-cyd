@@ -16,6 +16,7 @@
 #include <filament_db.h>
 #include <network_manager.h>
 #include <rfid_driver.h>
+#include <spoolman_client.h>
 #include <Wire.h>
 #include <feedback.h>
 #include <ui/ui_sound.h>
@@ -120,6 +121,8 @@ void setup() {
 
     sysState.init();
     config.init();
+    spoolmanClient.init();
+    Serial.printf("Mem[spoolman]:   heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     inventory.init();
     Serial.printf("Mem[inventory]:  heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     feedback.init();
@@ -150,7 +153,6 @@ void rfid_task() {
         }
         return;
     }
-
 
     // Poll every 500ms
     if (millis() - last_poll < 500) return;
@@ -193,7 +195,8 @@ void rfid_task() {
             SpoolData readSpool;
             if (rfid.readCFSTag(readSpool)) {
                 Serial.println("RFID: Auto-Read Success");
-                ui.updateDashboardFromSpool(readSpool);
+                ui.updateDashboardFromSpool(readSpool, true);
+                ui.spoolmanOnTagRead(current_uid);   // queued; rfid_task never waits on the network
                 ui.screenRfidRaw.populateTable(readSpool.getRawData().c_str()); // Populate Raw Log
                 ui.screenMain.setWriteStatus("Tag Read OK", true, false);
                 feedback.readSuccess();
@@ -222,6 +225,7 @@ void rfid_task() {
         // after a failed auth was falsely reported as removal (cfs-tag-write-design.md bug C).
         if (!last_uid.isEmpty()) {
             Serial.println("RFID: Tag removed");
+            spoolmanClient.tagRemoved();
             last_uid = "";
             last_read_failed = false;
         }
@@ -247,6 +251,7 @@ void loop() {
     lv_timer_handler();
     network.process();
     rfid_task(); // 🟢 Run the auto-detection task
+    ui.spoolmanTick();
 
     // Update status bar (battery placeholder + WiFi) every 2 seconds
     static uint32_t last_status_ms = 0;

@@ -38,6 +38,7 @@ void ConfigManager::load() {
     data.write_empty_only = doc["write_empty"] | true;
     data.clone_serial = doc["clone_serial"] | false;
     data.printer_ip = doc["printer_ip"] | "192.168.1.100";
+    data.spoolman_url = doc["spoolman_url"] | "http://spoolman.lan:7912";
 
     // P1.10: DB update metadata
     data.db_hash = doc["db_hash"] | "";
@@ -53,6 +54,7 @@ void ConfigManager::save() {
     doc["write_empty"] = data.write_empty_only;
     doc["clone_serial"] = data.clone_serial;
     doc["printer_ip"] = data.printer_ip;
+    doc["spoolman_url"] = data.spoolman_url;
 
     // P1.10: DB update metadata
     doc["db_hash"] = data.db_hash;

@@ -5,6 +5,7 @@
 #include <config_manager.h>
 #include <network_manager.h>
 #include <rfid_driver.h>
+#include <spoolman_client.h>
 #include <system_state.h>
 #include <inventory_manager.h>
 #include <feedback.h>
@@ -105,6 +106,7 @@ void UIManager::selectMaterial(const char* brand, const char* type, bool brandCh
 
 void UIManager::onTagForWrite() {
     writeArmed = false;
+    clearSpoolmanInfo();   // the write changes the tag, so its old record no longer applies
     sysState.handleEvent(SystemEvent::WRITE_REQUEST);
     updateButtonStates();
     screenMain.setWriteStatus("Writing...");
@@ -685,9 +687,42 @@ void UIManager::showFilamentLibrary() {
     ui.screenLibrary.show();
 }
 
-void UIManager::updateDashboardFromSpool(const SpoolData& data) {
+void UIManager::updateDashboardFromSpool(const SpoolData& data, bool keepSpoolmanInfo) {
     currentSpool = data;
     screenMain.update(data);
+    if (!keepSpoolmanInfo) clearSpoolmanInfo();
+}
+
+void UIManager::clearSpoolmanInfo() {
+    spoolmanClient.clear();
+    screenMain.setSpoolmanInfo("");
+}
+
+void UIManager::spoolmanOnTagRead(const String& uid) {
+    if (spoolmanClient.lookup(uid)) screenMain.setSpoolmanInfo("Spoolman: looking up...");
+}
+
+void UIManager::spoolmanTick() {
+    SpoolmanResult res;
+    if (!spoolmanClient.poll(res)) return;
+
+    char text[spoolman::SUMMARY_BUF];
+    switch (res.state) {
+        case SpoolmanState::Found:
+            spoolman::formatSummary(res.spool, text, sizeof(text));
+            screenMain.setSpoolmanInfo(text, 0x1B5E20);
+            break;
+        case SpoolmanState::NotFound:
+            screenMain.setSpoolmanInfo("Not in Spoolman", 0xB26A00);
+            break;
+        case SpoolmanState::Offline:
+            screenMain.setSpoolmanInfo("Spoolman offline");
+            break;
+        case SpoolmanState::Error:
+            snprintf(text, sizeof(text), "Spoolman error: %s", res.detail);
+            screenMain.setSpoolmanInfo(text, 0xC62828);
+            break;
+    }
 }
 
 void UIManager::updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid) {

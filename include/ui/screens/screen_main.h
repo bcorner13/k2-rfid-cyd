@@ -8,7 +8,9 @@ public:
     void update(const class SpoolData& data);
     void setWriteStatus(const char* status, bool success = false, bool neutral = true);
     void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
+    void setSpoolmanInfo(const char* text, uint32_t color = 0x606060);
 
+    lv_obj_t* labelSpoolman;    /* tag's Spoolman record; separate from the status bar, which auto-read rewrites */
     lv_obj_t* screen;
     lv_obj_t* btnSettings;
     lv_obj_t* btnLibrary;
