@@ -138,16 +138,35 @@ void rfid_task() {
     static bool last_read_failed = false;  // require tag removal before retry after failure
     static uint8_t miss_count = 0;         // consecutive polls with no tag
 
-    // Only auto-poll in IDLE state, and not while the overwrite dialog is open
-    if (sysState.getCurrentState() != SystemState::IDLE) return;
-    if (ui.writeConfirmPending) return;
+    // Only auto-poll in IDLE state, and not while the overwrite dialog is open.
+    // Both skips used to be silent, so a stuck state looked like a dead reader (2026-11-09).
+    static uint32_t last_blocked_log = 0;
+    bool notIdle = sysState.getCurrentState() != SystemState::IDLE;
+    if (notIdle || ui.writeConfirmPending) {
+        if (millis() - last_blocked_log > 5000) {
+            Serial.printf("RFID: polling paused (%s)\n",
+                          notIdle ? sysState.getStateName() : "overwrite dialog open");
+            last_blocked_log = millis();
+        }
+        return;
+    }
+
 
     // Poll every 500ms
     if (millis() - last_poll < 500) return;
     last_poll = millis();
 
+    // No tag for 10 s: make sure the PN532 is still alive. A wedged chip looks exactly like
+    // "no tag" forever (seen 2026-11-09 after repeated failed auths during an antenna problem).
+    static uint32_t last_seen_or_checked = millis();
+    if (millis() - last_seen_or_checked > 10000) {
+        rfid.healthCheck();
+        last_seen_or_checked = millis();
+    }
+
     if (rfid.checkTagPresent()) {
         miss_count = 0;
+        last_seen_or_checked = millis();
         String current_uid = rfid.formatUID();
 
         // Armed write: do it now, in the session that just selected the card.
@@ -198,7 +217,7 @@ void rfid_task() {
             last_detection_time = millis();
             ui.updateButtonStates();
         }
-    } else if (++miss_count >= 3) {
+    } else if (miss_count < 255 && ++miss_count >= 3) {
         // Tag removed — require 3 consecutive misses (~1.5 s); a single miss right
         // after a failed auth was falsely reported as removal (cfs-tag-write-design.md bug C).
         if (!last_uid.isEmpty()) {

@@ -145,6 +145,10 @@ bool FilamentDB::loadDatabase() {
         profile.material_type.trim();
 
         JsonArray colors = base["colors"];
+        for (JsonVariant c : colors) {
+            const char* s = c.as<const char*>();
+            if (s && s[0] == '#') profile.colors.push_back(strtoul(s + 1, nullptr, 16));
+        }
         if (!colors.isNull() && colors.size() > 0) {
             profile.color_name = colors[0].as<String>();
             if (profile.color_name.startsWith("#")) {

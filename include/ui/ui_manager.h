@@ -51,6 +51,7 @@ public:
     void showCustomEntry();
     void showWifiScreen();
     void showRfidRawScreen();
+    void closeColorPicker();   // public: swatch callbacks are free functions
 
     void updateDashboardFromSpool(const SpoolData& data);
     void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
@@ -86,9 +87,12 @@ private:
 
     // Color Picker
     lv_obj_t* modalColorPicker{nullptr};
+    lv_obj_t* pickerProductLabel{nullptr};   // "<product> colors" heading
+    lv_obj_t* pickerProductRow{nullptr};     // swatches rebuilt from the current product on open
+    lv_obj_t* pickerGenericRow{nullptr};     // fixed palette (color_palette.h)
     void createColorPicker();
+    void markPickerSelection();
     void showColorPicker();
-    void closeColorPicker();
 };
 
 extern UIManager ui;

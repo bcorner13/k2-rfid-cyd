@@ -107,6 +107,18 @@ The reference project's users report the K2 accepts its tags. That is a claim we
 4. Cut power mid-write if practical → the next write recovers (§3).
 5. Load the tag in the K2 Plus CFS → the printer shows the correct material, color and weight. **This is the acceptance test.**
 
+## 6a. Tag placement in the CFS (observed 2026-11-09)
+
+The CFS RFID readers sit on the **inner dividers**, one per slot. A tag only reads in a slot when it is
+on the spool side that faces that slot's divider, e.g. slot 1 needs the tag on the inside face. Genuine
+Creality spools carry **two tags, one per side**, so they read in any slot and either way round. A
+single device-written tag on the wrong side looks exactly like a bad tag: Moonraker shows
+`vender: unknown` and an empty or `0`-prefixed `material_type` for that slot. **Write two tags per
+spool** (one per side), or note which side faces the reader.
+
+The `material_type` prefix in Moonraker looks like a source flag: `1` = read from a tag, `0` = set by
+hand or left over (inferred from 4 slots, not confirmed).
+
 ## 7. Open questions
 
 1. Padding: ASCII `0` (reference) vs. the `000000` + `05 00…` seen on a real tag. Start with the reference. If the K2 rejects the tag, try matching the real tag byte-for-byte.

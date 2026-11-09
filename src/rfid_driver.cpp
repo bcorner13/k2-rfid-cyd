@@ -70,6 +70,17 @@ void RFIDDriver::init() {
     }
 }
 
+bool RFIDDriver::healthCheck() {
+    if (!nfc) return false;
+    if (nfc->getFirmwareVersion()) return true;
+    Serial.println("RFID: PN532 not responding - waking and reconfiguring");
+    nfc->wakeup();
+    nfc->SAMConfig();
+    uint32_t v = nfc->getFirmwareVersion();
+    Serial.printf("RFID: PN532 recovery %s\n", v ? "OK" : "FAILED (power-cycle the board)");
+    return v != 0;
+}
+
 uint32_t RFIDDriver::getFirmwareVersion() {
     if (nfc) {
         return nfc->getFirmwareVersion();
@@ -948,17 +959,11 @@ bool RFIDDriver::readCFSTag(SpoolData& spoolData) {
             }
         }
 
-        // Read mirror sectors (6-8) now, while tag is still selected in this session.
-        // Storing result so callers can retrieve remaining filament without a second session.
-        s_lastMirrors = readMirrors();
-        if (s_lastMirrors.valid) {
-            Serial.printf("Mirrors: remain=%umm / %ug  counter=%u\n",
-                          s_lastMirrors.data.remain_len_mm,
-                          s_lastMirrors.data.remain_weight_g,
-                          s_lastMirrors.data.update_counter);
-        } else {
-            Serial.println("Mirrors: unreadable (mutable sectors may use different keys)");
-        }
+        // No mirror-sector (6-8) read here: those sectors are this project's old extension, not part
+        // of the Creality format. On CFS tags all three auths fail, each followed by a re-select,
+        // and failed transactions are what wedge the PN532 (2026-11-09). The K2 tracks remaining
+        // amount itself (Moonraker box.Tn.remain_len), so nothing on the tag is needed.
+        s_lastMirrors = {};
 
         return true;
     }

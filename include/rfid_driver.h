@@ -72,6 +72,9 @@ public:
     void init();
     uint32_t getFirmwareVersion();
     bool checkTagPresent();
+    /// Ping the PN532; if it doesn't answer, wake + reconfigure it. Returns true if healthy afterwards.
+    /// Without this a wedged PN532 makes every poll report "no tag" until reboot (2026-11-09).
+    bool healthCheck();
     void haltTag();
 
     // K2 / CFS Operations (legacy SpoolData API)
