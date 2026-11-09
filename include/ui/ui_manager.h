@@ -71,7 +71,8 @@ public:
 
     // Dashboard brand/type dropdowns -> DB profile. Brand change keeps the brand (switching
     // type if it has none of the current type); type change falls back to Generic <type>.
-    void selectMaterial(const char* brand, const char* type, bool brandChanged);
+    /** Pick a profile by brand + type, and by product name when given (nullptr = first match). */
+    void selectMaterial(const char* brand, const char* type, bool brandChanged, const char* product = nullptr);
 
 private:
     // P1.9: Guard check — returns true if system is busy (not IDLE)

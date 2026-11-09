@@ -113,3 +113,5 @@ The reference project's users report the K2 accepts its tags. That is a claim we
 2. Date, batch and serial defaults: keep `AB124` / `A2` / random serial, or derive the date from the RTC?
 3. Should Write require a confirmation before overwriting a tag that already decodes as a valid CFS spool?
 4. Sector 2: does a genuine Creality spool carry data in blocks 8–10? If yes, match it. If it's empty, writing DnG's printer-type string is still harmless (plaintext, default key, trailer untouched).
+5. Weight steps (resolved 2026-11-09): the device writes 250/500/750/1000 g only (`include/cfs_weight.h`),
+   always the original spool size. Open: does the K2 accept a 2 kg value (`0660`)? Untested.

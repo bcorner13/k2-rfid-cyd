@@ -38,6 +38,8 @@ public:
     /** Newline-separated option strings for dropdowns (from material_database.json) */
     String getBrandOptionsForDropdown() const;
     String getMaterialTypeOptionsForDropdown() const;
+    /** Product names for one brand + material type, newline-separated, in DB order. Empty if none. */
+    String getProductOptionsForDropdown(const String& brand, const String& type) const;
 
 private:
     std::vector<FilamentProfile> cache;

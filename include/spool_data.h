@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <vector>
 #include "filament_profile.h"
+#include "cfs_weight.h"
 
 // Helper to format strings
 inline std::string format_hex(uint32_t val, int digits) {
@@ -43,7 +44,7 @@ struct SpoolData {
         _materialId = trim_copy(profile.id.c_str());   // 5-digit DB id, e.g. "01001" — this is what goes on the tag
         _materialColorNumeric = profile.color_hex;
         _materialColorString = profile.color_name.c_str();
-        _materialWeight = profile.weight_g;
+        _materialWeight = cfs::snapWeight(profile.weight_g);
 
         // Defaults for new tags
         _materialVendor = "0276"; // Creality Default
@@ -120,8 +121,9 @@ struct SpoolData {
     std::string getMaterialId() const { return _materialId; }
 
     // Setters
+    // Snapped to a CFS spool size (250/500/600/750/1000 g): the tag can't hold anything else.
     void setWeight(uint32_t w) {
-        _materialWeight = w;
+        _materialWeight = cfs::snapWeight(w);
         _generateSpooldataString();
     }
 
@@ -197,10 +199,10 @@ struct SpoolData {
     std::string _reserve = "";
 
     uint32_t _convertMaterialLength(const uint32_t& weight) {
-      return 330 * weight / 1000;
+      return cfs::weightToLength(weight);
     }
 
     uint32_t _convertMaterialWeight(const uint32_t& length) {
-      return 1000 * length / 330;
+      return cfs::lengthToWeight(length);
     }
 };

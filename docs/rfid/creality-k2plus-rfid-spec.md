@@ -268,8 +268,10 @@ A compliant tag MUST:
 
 - **SimplyPrint — The Creality Material Standard (NFC/RFID for the Creality CFS)**
   https://help.simplyprint.io/en/article/the-creality-material-standard-nfcrfid-for-the-creality-cfs-1crrofa/
-  Community documentation of the CFS payload format, sector layout, and Key A derivation.
-  Cross-reference against this spec when verifying field offsets or encoding rules.
+  Corrected 2026-11-09: this page gives **no** sector layout, offsets or key derivation. It only says
+  MIFARE Classic 1K + AES, lists the fields, and gives the weight steps (250/500/600/750/1000 g).
+  Its GitHub link (`Creality-Laser/K2-RFID`) is 404; the real one is `DnG-Crafts/K2-RFID`.
+  Summary: `tag-formats-landscape.md`. Measured layout: `cfs-tag-write-design.md`.
 
 # 12. Repository Recommendation
 

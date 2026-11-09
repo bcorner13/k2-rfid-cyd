@@ -242,8 +242,10 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
 - P2 FSD items: I2C bus recovery (P2.1), string length enforcement (P2.6), memory monitoring (P2.5)
 
 ### Milestone 6 — Bambu Lab NFC Read *(stretch)*
-- Bambu Lab AMS spools use **NFC Forum Type 2 tags** (NTAG213/215), not MIFARE Classic.
-  The PN532 can read these in passive mode — no Key A auth required.
+- **Tag type disputed:** this note said NTAG213/215, but SimplyPrint (2026-10) says Bambu uses
+  **MIFARE Classic**. As far as I recall the Bambu-Research-Group guide says the same: MIFARE Classic 1K,
+  per-UID keys, signed data. That's unverified here. If true, reading needs the derived keys, and the
+  NTAG/ATQA plan below is wrong. Check the guide before starting. See `docs/rfid/tag-formats-landscape.md`.
 - Tag format is community-reverse-engineered (not officially documented by Bambu Lab).
   Reference: community work at github.com/Bambu-Research-Group/RFID-Tag-Guide
 - **Read-only goal:** detect tag type on scan, parse Bambu payload (material type, color,
@@ -278,8 +280,11 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
   `:7125` (no auth) exposes CFS slot state via `GET /printer/objects/query?box&filament_rack` —
   `material_type[]`, `color_value[]`, `vender[]`, `remain_len[]` per box `T1..T4`, plus the raw tag
   string of the external spool in `filament_rack.vender`. `remain_len` was `0` for both loaded
-  (non-RFID) slots, and the rack tag string did not change during a print, so the remaining-amount
-  source is still open (Milestone 2). See CLAUDE.md "Environment / access".
+  (non-RFID) slots, and the rack tag string did not change during a print.
+  **2026-11-09:** the box returns 255 (unavailable) from `GET_REMAIN_LEN` for non-RFID spools, and
+  `box.Tn.measuring_wheel` is a per-box filament odometer, ~1 unit/mm, 98% of Moonraker `filament_used`
+  over a 118 m job. Plan and next test (load a tagged spool into a CFS slot):
+  `docs/architecture/spoolman-integration.md` §5.
 - Multi-printer support (track which spool is in which printer): K2 Plus + Prusa Core One L+.
 - Statistics dashboard: consumption trends from SD card usage logs
 - Export/import inventory via USB or WiFi download

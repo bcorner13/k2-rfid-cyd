@@ -15,11 +15,11 @@ public:
     lv_obj_t* btnWrite;
     lv_obj_t* btnInventory;
     lv_obj_t* labelWriteStatus;
-    lv_obj_t* sliderWeight;
-    lv_obj_t* labelWeight;
+    lv_obj_t* btnmWeight;       /* one-checked spool-size buttons (cfs_weight.h) */
     lv_obj_t* labelName;
     lv_obj_t* ddBrand;
     lv_obj_t* ddType;
+    lv_obj_t* ddProduct;        /* products for the selected brand + type */
     lv_obj_t* colorBlock;       /* colored block, tap opens color picker */
     lv_obj_t* labelHexColor;    /* hex/name label inside colorBlock */
 

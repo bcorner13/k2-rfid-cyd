@@ -77,14 +77,14 @@ void UIManager::writeTick() {
     if (writeArmed && millis() - s_writeArmedMs > WRITE_ARM_TIMEOUT_MS) cancelWrite("Write cancelled (timeout)");
 }
 
-void UIManager::selectMaterial(const char* brand, const char* type, bool brandChanged) {
+void UIManager::selectMaterial(const char* brand, const char* type, bool brandChanged, const char* product) {
     const FilamentProfile* match = nullptr;      // brand + type
     const FilamentProfile* brandAny = nullptr;   // brand, any type
     const FilamentProfile* generic = nullptr;    // Generic + type
     for (const auto& p : filamentDB.getCache()) {
         if (p.brand == brand) {
             if (!brandAny) brandAny = &p;
-            if (!match && p.material_type == type) match = &p;
+            if (!match && p.material_type == type && (!product || p.name == product)) match = &p;
         }
         if (!generic && p.brand == "Generic" && p.material_type == type) generic = &p;
     }
@@ -183,9 +183,10 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenMain.btnInventory, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.btnWrite, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenMain.colorBlock, event_handler, LV_EVENT_CLICKED, NULL);   // dropped in fb35184
-    lv_obj_add_event_cb(screenMain.sliderWeight, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenMain.btnmWeight, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(screenMain.ddBrand, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(screenMain.ddType, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(screenMain.ddProduct, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_add_event_cb(screenSettings.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenSettings.btnAbout, event_handler, LV_EVENT_CLICKED, NULL);
@@ -255,7 +256,8 @@ void UIManager::updateButtonStates() {
     setEnabled(screenMain.btnWrite, !busy);
     setEnabled(screenMain.btnLibrary, !busy);
     setEnabled(screenMain.colorBlock, !busy);
-    setEnabled(screenMain.sliderWeight, !busy);
+    setEnabled(screenMain.btnmWeight, !busy);
+    setEnabled(screenMain.ddProduct, !busy);
     // Settings button always active (navigation only)
 
     // Settings screen: operation buttons disabled when busy
@@ -400,7 +402,8 @@ void UIManager::event_handler(lv_event_t* e) {
             SpoolData writeData;
             writeData.setType(rec->material_type.c_str());
             writeData.setColor(strtoul(rec->color_hex.c_str(), nullptr, 16));
-            writeData.setWeight(rec->current_weight_g);
+            // The tag holds the original spool size, not what is left (setWeight snaps it).
+            writeData.setWeight(rec->initial_weight_g);
             // SpoolRecord has no DB id; resolve it by brand + name for the tag's material field.
             for (const auto& p : filamentDB.getCache()) {
                 if (p.brand == rec->brand && p.name == rec->name) { writeData.setMaterialId(p.id.c_str()); break; }
@@ -565,11 +568,11 @@ void UIManager::event_handler(lv_event_t* e) {
         }
     }
     else if (code == LV_EVENT_VALUE_CHANGED) {
-        if (obj == ui.screenMain.sliderWeight) {
-            if (isSystemBusy()) return;  // P1.9: guard slider too
-            int weight = lv_slider_get_value(obj);
-            ui.currentSpool.setWeight(weight);
-            lv_label_set_text_fmt(ui.screenMain.labelWeight, "%dg", weight);
+        if (obj == ui.screenMain.btnmWeight) {
+            if (isSystemBusy()) return;  // P1.9: guard size buttons too
+            uint32_t idx = lv_buttonmatrix_get_selected_button(obj);
+            if (idx >= cfs::kWeightStepCount) return;
+            ui.currentSpool.setWeight(cfs::kWeightSteps[idx].grams);
         }
         else if (obj == ui.screenMain.ddBrand || obj == ui.screenMain.ddType) {
             if (isSystemBusy()) return;
@@ -577,6 +580,14 @@ void UIManager::event_handler(lv_event_t* e) {
             lv_dropdown_get_selected_str(ui.screenMain.ddBrand, brand, sizeof(brand));
             lv_dropdown_get_selected_str(ui.screenMain.ddType, type, sizeof(type));
             ui.selectMaterial(brand, type, obj == ui.screenMain.ddBrand);
+        }
+        else if (obj == ui.screenMain.ddProduct) {
+            if (isSystemBusy()) return;
+            char brand[48], type[24], product[96];
+            lv_dropdown_get_selected_str(ui.screenMain.ddBrand, brand, sizeof(brand));
+            lv_dropdown_get_selected_str(ui.screenMain.ddType, type, sizeof(type));
+            lv_dropdown_get_selected_str(ui.screenMain.ddProduct, product, sizeof(product));
+            if (strcmp(product, "-") != 0) ui.selectMaterial(brand, type, false, product);
         }
         else if (obj == ui.screenSettings.swBeep) {
             config.data.beep_enabled = lv_obj_has_state(obj, LV_STATE_CHECKED);

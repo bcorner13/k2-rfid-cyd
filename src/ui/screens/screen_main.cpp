@@ -148,7 +148,8 @@ void ScreenMain::init() {
     lv_obj_set_grid_cell(rightPanel, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
     lv_obj_set_flex_flow(rightPanel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(rightPanel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(rightPanel, 20, 0);
+    lv_obj_set_style_pad_all(rightPanel, 16, 0);
+    lv_obj_set_style_pad_row(rightPanel, 8, 0);
 
     labelName = lv_label_create(rightPanel);
     lv_label_set_text(labelName, "Generic PLA");
@@ -173,30 +174,34 @@ void ScreenMain::init() {
     lv_obj_set_width(ddType, LV_PCT(100));
     lv_obj_set_style_text_font(ddType, &lv_font_montserrat_20, 0);
 
-    lv_obj_t* sliderCont = lv_obj_create(rightPanel);
-    lv_obj_set_width(sliderCont, LV_PCT(100));
-    lv_obj_set_height(sliderCont, 56);
-    lv_obj_set_style_bg_opa(sliderCont, 0, 0);
-    lv_obj_set_style_border_width(sliderCont, 0, 0);
-    lv_obj_clear_flag(sliderCont, LV_OBJ_FLAG_SCROLLABLE);
+    // Brand + type alone can't reach e.g. CR-Silk or EN-PLA+ (Creality + PLA has 14 products).
+    ddProduct = lv_dropdown_create(rightPanel);
+    lv_dropdown_set_options(ddProduct, "-");
+    lv_obj_set_width(ddProduct, LV_PCT(100));
+    lv_obj_set_style_text_font(ddProduct, &lv_font_montserrat_20, 0);
 
-    sliderWeight = lv_slider_create(sliderCont);
-    lv_obj_set_width(sliderWeight, lv_pct(100));
-    lv_obj_set_height(sliderWeight, 20);
-    lv_obj_set_align(sliderWeight, LV_ALIGN_TOP_MID);
-    lv_obj_set_y(sliderWeight, 4);
-    lv_slider_set_range(sliderWeight, 0, 1000);
-    lv_slider_set_mode(sliderWeight, LV_SLIDER_MODE_NORMAL);
-    lv_obj_set_style_pad_all(sliderWeight, 8, LV_PART_KNOB);
-    lv_obj_set_style_border_width(sliderWeight, 2, LV_PART_KNOB);
-    lv_obj_set_style_border_color(sliderWeight, lv_color_hex(0x404040), LV_PART_KNOB);
-
-    labelWeight = lv_label_create(sliderCont);
-    lv_label_set_text(labelWeight, "1000g");
-    lv_obj_set_align(labelWeight, LV_ALIGN_BOTTOM_MID);
-    lv_obj_set_y(labelWeight, 0);
-    lv_obj_set_style_text_font(labelWeight, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(labelWeight, lv_color_black(), 0);
+    // Spool size: one toggle per size the tag can carry (cfs_weight.h). The K2 never writes the
+    // amount back to the tag, so this is the original spool size, not what is left.
+    {
+        static const char* map[cfs::kWeightStepCount + 1];
+        static char labels[cfs::kWeightStepCount][8];
+        for (size_t i = 0; i < cfs::kWeightStepCount; ++i) {
+            uint32_t g = cfs::kWeightSteps[i].grams;
+            if (g % 1000 == 0) snprintf(labels[i], sizeof(labels[i]), "%ukg", (unsigned)(g / 1000));
+            else               snprintf(labels[i], sizeof(labels[i]), "%ug", (unsigned)g);
+            map[i] = labels[i];
+        }
+        map[cfs::kWeightStepCount] = "";
+        btnmWeight = lv_buttonmatrix_create(rightPanel);
+        lv_buttonmatrix_set_map(btnmWeight, map);
+        lv_buttonmatrix_set_button_ctrl_all(btnmWeight, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+        lv_buttonmatrix_set_one_checked(btnmWeight, true);
+        lv_buttonmatrix_set_button_ctrl(btnmWeight, cfs::kDefaultStepIndex, LV_BUTTONMATRIX_CTRL_CHECKED);
+        lv_obj_set_width(btnmWeight, LV_PCT(100));
+        lv_obj_set_height(btnmWeight, 52);
+        lv_obj_set_style_pad_all(btnmWeight, 4, 0);
+        lv_obj_set_style_text_font(btnmWeight, &lv_font_montserrat_20, LV_PART_ITEMS);
+    }
 
     /* --- Bottom region: status + Read, Write, Library, Settings (row 3) --- */
     lv_obj_t* bottomArea = lv_obj_create(screen);
@@ -286,17 +291,28 @@ void ScreenMain::update(const SpoolData& data) {
 
     lv_dropdown_set_selected(ddBrand, find_dropdown_option_index(ddBrand, data.getBrand()));
     lv_dropdown_set_selected(ddType, find_dropdown_option_index(ddType, data.getType()));
+    {
+        String opts = filamentDB.getProductOptionsForDropdown(data.getBrand().c_str(), data.getType().c_str());
+        lv_dropdown_set_options(ddProduct, opts.isEmpty() ? "-" : opts.c_str());
+        lv_dropdown_set_selected(ddProduct, find_dropdown_option_index(ddProduct, data.getDisplayName()));
+    }
 
     lv_obj_set_style_bg_color(colorBlock, lv_color_hex(data.getColorHex()), 0);
     lv_obj_set_style_text_color(labelHexColor, contrasting_text_color(data.getColorHex()), 0);
     lv_label_set_text(labelHexColor, data.getColorName().c_str());
-    lv_slider_set_value(sliderWeight, data.getWeight(), LV_ANIM_OFF);
-    lv_label_set_text_fmt(labelWeight, "%dg", data.getWeight());
+    // Highlight the matching size; a tag with a size we don't offer (e.g. 600 g) shows none.
+    lv_buttonmatrix_clear_button_ctrl_all(btnmWeight, LV_BUTTONMATRIX_CTRL_CHECKED);
+    {
+        size_t idx = cfs::weightStepIndex(data.getWeight());
+        if (cfs::kWeightSteps[idx].grams == data.getWeight())
+            lv_buttonmatrix_set_button_ctrl(btnmWeight, idx, LV_BUTTONMATRIX_CTRL_CHECKED);
+    }
 
     lv_obj_invalidate(labelName);
     lv_obj_invalidate(colorBlock);
     lv_obj_invalidate(labelHexColor);
-    lv_obj_invalidate(labelWeight);
+    lv_obj_invalidate(btnmWeight);
     lv_obj_invalidate(ddBrand);
     lv_obj_invalidate(ddType);
+    lv_obj_invalidate(ddProduct);
 }

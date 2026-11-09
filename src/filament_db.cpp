@@ -123,13 +123,22 @@ bool FilamentDB::loadDatabase() {
 
     cache.clear();
     cache.reserve(arr.size());
+    size_t skippedDup = 0;
 
     for (JsonObject obj : arr) {
         JsonObject base = obj["base"];
         JsonObject kv   = obj["kvParam"];
 
+        // The tag carries only the 5-digit id, so keep one profile per id: the first one.
+        // The printer's live DB appends user slicer presets under an existing id
+        // (e.g. "CR-Silk @Creality K2 Plus 0.4 nozzle - Safer" = 05001 again).
+        String id = base["id"] | "";
+        bool dup = false;
+        for (const auto& c : cache) if (c.id == id) { dup = true; break; }
+        if (dup) { skippedDup++; continue; }
+
         FilamentProfile profile;
-        profile.id            = base["id"] | "";
+        profile.id            = id;
         profile.brand         = base["brand"] | "";
         profile.name          = base["name"] | "";
         profile.material_type = base["meterialType"] | "";
@@ -162,7 +171,8 @@ bool FilamentDB::loadDatabase() {
     }
 
     file.close();
-    Serial.printf("Loaded %u filaments successfully.\n", cache.size());
+    Serial.printf("Loaded %u filaments successfully (%u duplicate ids skipped).\n",
+                  (unsigned)cache.size(), (unsigned)skippedDup);
     return true;
 }
 
@@ -213,6 +223,16 @@ String FilamentDB::getMaterialTypeOptionsForDropdown() const {
         seen.push_back(p.material_type);
         if (result.length()) result += "\n";
         result += p.material_type;
+    }
+    return result;
+}
+
+String FilamentDB::getProductOptionsForDropdown(const String& brand, const String& type) const {
+    String result;
+    for (const auto& p : cache) {
+        if (p.brand != brand || p.material_type != type || p.name.isEmpty()) continue;
+        if (result.length()) result += "\n";
+        result += p.name;
     }
     return result;
 }
