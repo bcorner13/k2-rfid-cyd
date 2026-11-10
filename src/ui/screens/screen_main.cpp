@@ -1,3 +1,4 @@
+#include <dropdown_match.h>
 #include <ui/screens/screen_main.h>
 #include <spool_data.h>
 #include <filament_db.h>
@@ -34,29 +35,8 @@ static void get_dropdown_option_at(lv_obj_t* dropdown, uint16_t index, char* buf
 
 // Find dropdown index: exact match, or first option that starts with target (for truncated tag type e.g. "CR-PL" -> "CR-PLA")
 static uint16_t find_dropdown_option_index(lv_obj_t* dropdown, const std::string& target_option) {
-    const char* options_cstr = lv_dropdown_get_options(dropdown);
-    if (!options_cstr) return 0;
-    std::string options_str(options_cstr);
-    size_t start = 0;
-    uint16_t index = 0;
-    while (start < options_str.length()) {
-        size_t end = options_str.find('\n', start);
-        std::string current_option = options_str.substr(start, (end == std::string::npos) ? std::string::npos : end - start);
-        size_t first = current_option.find_first_not_of(' ');
-        size_t last = current_option.find_last_not_of(' ');
-        if (std::string::npos == first) current_option = "";
-        else current_option = current_option.substr(first, last - first + 1);
-
-        if (current_option == target_option) return index;
-        if (!target_option.empty() && current_option.length() >= target_option.length() &&
-            current_option.compare(0, target_option.length(), target_option) == 0) return index;
-        if (end == std::string::npos) break;
-        start = end + 1;
-        index++;
-    }
-    return 0;
+    return findDropdownOption(lv_dropdown_get_options(dropdown), target_option);
 }
-
 
 void ScreenMain::init() {
     screen = lv_obj_create(NULL);
