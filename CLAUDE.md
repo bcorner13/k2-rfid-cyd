@@ -125,6 +125,7 @@ JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
   - V3.1: onboard SPK connector (+ / -). Likely same I2S as V2.0; use `-DBOARD_MATOUCH_V2` until confirmed.
 - **RTC:** PCF8563 onboard — use for timestamps, no NTP dependency.
 - **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10. Board ships with 32GB MicroSD.
+  - **SQLite on SD works** (`siara-cc/Sqlite3Esp32 @ 2.5.0`, measured 2026-11-09, `pio run -e sdtest` sketch in `test/sd_sqlite/`): `SPIClass(FSPI)` on those pins, `SD.begin(10, spi, 20000000, "/sd")`, open `/sd/<file>.db`. Use `page_size=4096` + `cache_size=-256` (the library defaults to a 1 KB cache, and bulk writes crawl), `journal_mode=TRUNCATE` (no WAL), `synchronous=FULL`. `PRAGMA integrity_check` is compiled out of the library. Survived 3/3 USB power cuts with no lost rows.
 - **Display:** ESP32-S3 native RGB peripheral → LCD module QT4300H40R10-V03 (panel IC: HX8664/HX8264). Driven in **16-bit RGB565** mode. Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1. Clock: 16 MHz. Note: "ST7262" label in older docs was incorrect — no such controller chip on this board.
 - **PSRAM:** 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
 - **Flash:** 16MB

@@ -13,3 +13,7 @@ compile_commands.json
 config.json
 *.FCBak
 
+
+# Offline-inventory work: plan workspace, disposable test Spoolman
+.superpowers/
+.spoolman-test/
