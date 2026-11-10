@@ -47,7 +47,7 @@ public:
     void showFilamentLibrary();
     void showAboutScreen();
     void showInventoryScreen();
-    void showSpoolDetail(const String& spool_id);
+    void showSpoolDetail(int spoolId);   // from the local copy
     void showCustomEntry();
     void showWifiScreen();
     void showRfidRawScreen();
@@ -59,7 +59,8 @@ public:
 
     // Spoolman lookup (read-only). spoolmanOnTagRead() starts it; spoolmanTick() shows the result.
     void spoolmanOnTagRead(const String& uid);
-    void spoolmanTick();
+    void spoolmanTick();       // also refreshes the inventory screen when a pull lands
+    void syncStatusText(char* out, size_t n);   // "Live - synced 14:05", "No SD card - ..."
     void clearSpoolmanInfo();
     void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
 
@@ -83,6 +84,10 @@ public:
     void selectMaterial(const char* brand, const char* type, bool brandChanged, const char* product = nullptr);
 
 private:
+    void refreshInventory();
+    bool inventoryRefreshPending = false;     // store was busy; retry from spoolmanTick()
+    uint32_t inventoryShownCounter = 0;      // spoolmanSync.changeCounter() of the rows on screen
+
     // P1.9: Guard check — returns true if system is busy (not IDLE)
     static bool isSystemBusy();
 

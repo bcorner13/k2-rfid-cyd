@@ -6,6 +6,10 @@
 #include <network_manager.h>
 #include <rfid_driver.h>
 #include <spoolman_client.h>
+#include <sd_storage.h>
+#include <spoolman_sync.h>
+#include <sync_status_text.h>
+#include <time.h>
 #include <system_state.h>
 #include <inventory_manager.h>
 #include <feedback.h>
@@ -203,8 +207,6 @@ void UIManager::init() {
     lv_obj_add_event_cb(screenRfidRaw.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenLibrary.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenInventory.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenInventory.btnScanTag, event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(screenInventory.btnAddCustom, event_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(screenWifi.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
 
     // Spool detail + custom entry event handlers registered lazily in
@@ -269,18 +271,8 @@ void UIManager::updateButtonStates() {
     setEnabled(screenSettings.btnRestart, !busy);
     // Back, About, Beep toggle always active
 
-    // Inventory screen: Scan/Add disabled when busy, Back always active
-    setEnabled(screenInventory.btnScanTag, !busy);
-    setEnabled(screenInventory.btnAddCustom, !busy);
-
-    // Spool detail: action buttons disabled when busy (only if lazily initialized)
-    if (screenSpoolDetail.btnUpdateWeight) {
-        setEnabled(screenSpoolDetail.btnUpdateWeight, !busy);
-        setEnabled(screenSpoolDetail.btnWriteTag, !busy);
-        setEnabled(screenSpoolDetail.btnUnlinkTag, !busy);
-        setEnabled(screenSpoolDetail.btnArchive, !busy);
-        setEnabled(screenSpoolDetail.btnDelete, !busy);
-    }
+    // Spool detail: Write disabled when busy (only once lazily created)
+    if (screenSpoolDetail.btnWriteTag) setEnabled(screenSpoolDetail.btnWriteTag, !busy);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,111 +331,8 @@ void UIManager::event_handler(lv_event_t* e) {
         else if (obj == ui.screenMain.btnLibrary) {
             ui.showFilamentLibrary();
         }
-        else if (obj == ui.screenInventory.btnScanTag) {
-            sysState.handleEvent(SystemEvent::SCAN_REQUEST);
-            ui.updateButtonStates();
-
-            TagData tag;
-            if (rfid.readTag(tag)) {
-                feedback.tagDetected();
-                String uid = tag.formatUID();
-                const SpoolRecord* existing = inventory.getSpoolByUID(uid);
-                if (existing) {
-                    // Known spool — reconcile weight
-                    auto reconcile = RFIDDriver::reconcileWeight(
-                        tag.remaining_weight_g, existing->current_weight_g);
-                    if (!reconcile.in_sync) {
-                        Serial.printf("Weight mismatch: tag=%ug inv=%ug\n",
-                                      reconcile.tag_weight_g, reconcile.inventory_weight_g);
-                        // Update inventory with tag weight (tag is source of truth)
-                        inventory.updateWeight(existing->spool_id, reconcile.tag_weight_g);
-                    }
-                    sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
-                    ui.updateButtonStates();
-                    ui.showSpoolDetail(existing->spool_id);
-                    return;
-                }
-                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
-            } else {
-                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
-                feedback.operationFailed();
-            }
-            ui.updateButtonStates();
-            ui.screenInventory.populate();
-        }
-        else if (obj == ui.screenInventory.btnAddCustom) {
-            ui.showCustomEntry();
-        }
-        else if (obj == ui.screenSpoolDetail.btnWeightCancel) {
-            // Close modal (no busy guard needed)
-            lv_obj_add_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
-        }
-        else if (obj == ui.screenSpoolDetail.btnUpdateWeight) {
-            // Show weight input modal
-            lv_obj_clear_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
-        }
-        else if (obj == ui.screenSpoolDetail.btnWeightOk) {
-            // Save weight from spinbox
-            int32_t newWeight = lv_spinbox_get_value(ui.screenSpoolDetail.spinboxWeight);
-            inventory.updateWeight(ui.screenSpoolDetail.currentSpoolId, (uint32_t)newWeight);
-            lv_obj_add_flag(ui.screenSpoolDetail.modalWeight, LV_OBJ_FLAG_HIDDEN);
-            // Refresh the detail screen
-            ui.screenSpoolDetail.loadSpool(ui.screenSpoolDetail.currentSpoolId);
-            feedback.spoolSaved();
-            Serial.printf("Weight updated: %s → %dg\n",
-                          ui.screenSpoolDetail.currentSpoolId.c_str(), (int)newWeight);
-        }
         else if (obj == ui.screenSpoolDetail.btnWriteTag) {
-            const SpoolRecord* rec = inventory.getSpoolById(ui.screenSpoolDetail.currentSpoolId);
-            if (!rec) return;
-
-            sysState.handleEvent(SystemEvent::WRITE_REQUEST);
-            ui.updateButtonStates();
-
-            // Build SpoolData from SpoolRecord for CFS tag write
-            SpoolData writeData;
-            writeData.setType(rec->material_type.c_str());
-            writeData.setColor(strtoul(rec->color_hex.c_str(), nullptr, 16));
-            // The tag holds the original spool size, not what is left (setWeight snaps it).
-            writeData.setWeight(rec->initial_weight_g);
-            // SpoolRecord has no DB id; resolve it by brand + name for the tag's material field.
-            for (const auto& p : filamentDB.getCache()) {
-                if (p.brand == rec->brand && p.name == rec->name) { writeData.setMaterialId(p.id.c_str()); break; }
-            }
-
-            // TODO: move to the armed flow; until then this refuses (NEEDS_CONFIRM) rather
-            // than overwrite an existing spool without asking.
-            CfsWriteResult wr = rfid.writeCFSTag(writeData, false);
-            Serial.printf("Spool detail write -> %s\n", cfsWriteResultText(wr));
-            if (wr == CfsWriteResult::OK) {
-                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);   // WRITING -> VERIFYING
-                sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
-                feedback.writeSuccess();
-                Serial.printf("Tag written for spool %s\n", rec->spool_id.c_str());
-            } else {
-                sysState.handleEvent(SystemEvent::OPERATION_FAILED);
-                feedback.operationFailed();
-                Serial.println("Tag write failed");
-            }
-            ui.updateButtonStates();
-        }
-        else if (obj == ui.screenSpoolDetail.btnUnlinkTag) {
-            inventory.unlinkTag(ui.screenSpoolDetail.currentSpoolId);
-            ui.screenSpoolDetail.loadSpool(ui.screenSpoolDetail.currentSpoolId);
-            Serial.printf("Tag unlinked from spool %s\n",
-                          ui.screenSpoolDetail.currentSpoolId.c_str());
-        }
-        else if (obj == ui.screenSpoolDetail.btnArchive) {
-            String id = ui.screenSpoolDetail.currentSpoolId;
-            inventory.archiveSpool(id);
-            Serial.printf("Spool archived: %s\n", id.c_str());
-            ui.showInventoryScreen();
-        }
-        else if (obj == ui.screenSpoolDetail.btnDelete) {
-            String id = ui.screenSpoolDetail.currentSpoolId;
-            inventory.deleteSpool(id);
-            Serial.printf("Spool deleted: %s\n", id.c_str());
-            ui.showInventoryScreen();
+            Serial.printf("UI: write tag for spool %d (Task 6)\n", ui.screenSpoolDetail.currentSpoolId);
         }
         else if (obj == ui.screenCustomEntry.btnPrev) {
             if (ui.screenCustomEntry.currentStep > 0)
@@ -493,12 +382,7 @@ void UIManager::event_handler(lv_event_t* e) {
             Serial.printf("Custom spool created: %s\n", newId.c_str());
             feedback.spoolSaved();
 
-            if (obj == ui.screenCustomEntry.btnSaveWrite) {
-                // Navigate to spool detail for tag writing
-                ui.showSpoolDetail(newId);
-            } else {
-                ui.showInventoryScreen();
-            }
+            ui.showInventoryScreen();   // custom entry is retired with inventory.json (plan Task 10)
         }
         else if (obj == ui.screenMain.colorBlock) {
             ui.showColorPicker();
@@ -545,11 +429,7 @@ void UIManager::event_handler(lv_event_t* e) {
                 invRow = lv_obj_get_parent(invRow);
             }
             if (invRow && lv_obj_get_parent(invRow) == ui.screenInventory.list) {
-                size_t idx = (size_t)lv_obj_get_user_data(invRow);
-                auto active = inventory.getAllActive();
-                if (idx < active.size()) {
-                    ui.showSpoolDetail(active[idx]->spool_id);
-                }
+                ui.showSpoolDetail((int)(intptr_t)lv_obj_get_user_data(invRow));
                 return;
             }
 
@@ -624,19 +504,31 @@ void UIManager::showRfidRawScreen() {
     screenRfidRaw.show();
 }
 
-void UIManager::showSpoolDetail(const String& spool_id) {
+void UIManager::syncStatusText(char* out, size_t n) {
+    formatSyncStatus(sdStorage.available() ? spoolmanSync.state() : SyncState::NoStore,
+                     spoolmanSync.lastPullEpoch(), spoolmanSync.lastPullMillis(), millis(),
+                     (int64_t)time(nullptr), out, n);
+}
+
+void UIManager::showSpoolDetail(int spoolId) {
     static bool eventsRegistered = false;
-    screenSpoolDetail.loadSpool(spool_id);
+    SpoolRow row;
+    bool found = false;
+    {
+        StoreGuard g;
+        found = g && g->getSpool(spoolId, row);
+    }
+    if (!found) {
+        Serial.printf("UI: spool %d not in local copy (or store busy)\n", spoolId);
+        return;
+    }
+    char status[64];
+    syncStatusText(status, sizeof(status));
+    screenSpoolDetail.loadSpool(row, status);
     if (!eventsRegistered) {
         eventsRegistered = true;
         lv_obj_add_event_cb(screenSpoolDetail.btnBack, event_handler, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(screenSpoolDetail.btnUpdateWeight, event_handler, LV_EVENT_CLICKED, NULL);
         lv_obj_add_event_cb(screenSpoolDetail.btnWriteTag, event_handler, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(screenSpoolDetail.btnUnlinkTag, event_handler, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(screenSpoolDetail.btnArchive, event_handler, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(screenSpoolDetail.btnDelete, event_handler, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(screenSpoolDetail.btnWeightOk, event_handler, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(screenSpoolDetail.btnWeightCancel, event_handler, LV_EVENT_CLICKED, NULL);
     }
     screenSpoolDetail.show();
     updateButtonStates();
@@ -661,17 +553,42 @@ void UIManager::showWifiScreen() {
     updateButtonStates();
 }
 
-void UIManager::showInventoryScreen() {
-    screenInventory.populate();
-    screenInventory.show();
-    updateButtonStates();
+void UIManager::refreshInventory() {
+    char status[64];
+    syncStatusText(status, sizeof(status));
+    if (!sdStorage.available()) {
+        inventoryRefreshPending = false;
+        screenInventory.showMessage("Offline mode unavailable: no SD card.\n"
+                                    "Tag read and write work as usual.", status);
+        return;
+    }
+    std::vector<SpoolRow> rows;
+    bool ok = false;
+    {
+        StoreGuard g;   // <= 50 ms; the sync task holds it ~1 s during a pull
+        ok = g && g->listSpools(rows, false);
+    }
+    if (!ok) {
+        inventoryRefreshPending = true;   // retried from spoolmanTick()
+        screenInventory.showMessage("Updating...", status);
+        return;
+    }
+    inventoryRefreshPending = false;
+    inventoryShownCounter = spoolmanSync.changeCounter();
+    screenInventory.populate(rows, status);
 
-    // Register tap handlers for inventory list rows (dynamic, recreated by populate)
-    uint32_t count = lv_obj_get_child_cnt(screenInventory.list);
+    // Rows are recreated on every populate, so their tap handlers are too.
+    const uint32_t count = lv_obj_get_child_cnt(screenInventory.list);
     for (uint32_t i = 0; i < count; i++) {
         lv_obj_t* row = lv_obj_get_child(screenInventory.list, i);
-        lv_obj_add_event_cb(row, event_handler, LV_EVENT_CLICKED, NULL);
+        if (lv_obj_has_flag(row, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_event_cb(row, event_handler, LV_EVENT_CLICKED, NULL);
     }
+}
+
+void UIManager::showInventoryScreen() {
+    refreshInventory();
+    screenInventory.show();
+    updateButtonStates();
 }
 
 void UIManager::showFilamentLibrary() {
@@ -703,6 +620,19 @@ void UIManager::spoolmanOnTagRead(const String& uid) {
 }
 
 void UIManager::spoolmanTick() {
+    if (lv_screen_active() == screenInventory.screen) {
+        static uint32_t lastStatusMs = 0;
+        if (inventoryRefreshPending || inventoryShownCounter != spoolmanSync.changeCounter()) {
+            refreshInventory();
+            lastStatusMs = millis();
+        } else if (millis() - lastStatusMs > 5000) {   // keep "synced N min ago" / Live-Offline current
+            char status[64];
+            syncStatusText(status, sizeof(status));
+            lv_label_set_text(screenInventory.labelStatus, status);
+            lastStatusMs = millis();
+        }
+    }
+
     SpoolmanResult res;
     if (!spoolmanClient.poll(res)) return;
 
