@@ -17,6 +17,8 @@
 #include <network_manager.h>
 #include <rfid_driver.h>
 #include <spoolman_client.h>
+#include <sd_storage.h>
+#include <spoolman_sync.h>
 #include <Wire.h>
 #include <feedback.h>
 #include <ui/ui_sound.h>
@@ -123,6 +125,9 @@ void setup() {
     config.init();
     spoolmanClient.init();
     Serial.printf("Mem[spoolman]:   heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+    sdStorage.begin();      // no card or a bad card only turns offline mode off
+    spoolmanSync.init();
+    Serial.printf("Mem[sync]:       heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     inventory.init();
     Serial.printf("Mem[inventory]:  heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     feedback.init();
@@ -232,8 +237,47 @@ void rfid_task() {
     }
 }
 
+// Serial console for bench testing: "url" prints the Spoolman URL, "url <value>" sets and saves it
+// (same as the Wi-Fi portal field), "sync" starts a sync now.
+static void serial_console() {
+    static char line[160];
+    static size_t len = 0;
+    while (Serial.available()) {
+        const char c = (char)Serial.read();
+        if (c != '\n' && c != '\r') {
+            if (len < sizeof(line) - 1) line[len++] = c;
+            continue;
+        }
+        if (len == 0) continue;
+        line[len] = '\0';
+        len = 0;
+        if (strcmp(line, "url") == 0) {
+            Serial.printf("CONSOLE: spoolman_url=\"%s\"\n", config.data.spoolman_url.c_str());
+        } else if (strncmp(line, "url ", 4) == 0) {
+            config.data.spoolman_url = String(line + 4);
+            config.data.spoolman_url.trim();
+            config.save();
+            spoolmanSync.setBaseUrl(config.data.spoolman_url.c_str());
+            spoolmanSync.kick();
+            Serial.printf("CONSOLE: spoolman_url set to \"%s\"\n", config.data.spoolman_url.c_str());
+        } else if (strcmp(line, "state") == 0) {
+            TaskHandle_t t = xTaskGetHandle("spoolsync");
+            Serial.printf("CONSOLE: sync state=%d lastPull=%lld sd=%d (%s) task=%d stackFree=%u\n",
+                          (int)spoolmanSync.state(), (long long)spoolmanSync.lastPullEpoch(),
+                          (int)sdStorage.available(), sdStorage.failure(), t ? (int)eTaskGetState(t) : -1,
+                          t ? (unsigned)uxTaskGetStackHighWaterMark(t) : 0);
+        } else if (strcmp(line, "sync") == 0) {
+            spoolmanSync.kick();
+            Serial.println("CONSOLE: sync started");
+        } else {
+            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | sync | state)\n", line);
+        }
+    }
+}
+
 void loop() {
     esp_task_wdt_reset();
+    serial_console();
     static uint32_t last_ms = millis();
     static uint32_t last_mem_ms = 0;
     uint32_t now = millis();

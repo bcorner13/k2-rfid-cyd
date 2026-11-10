@@ -9,10 +9,25 @@
 using spoolman::MirrorFilament;
 using spoolman::MirrorSpool;
 
+#ifdef ARDUINO
+// On the board (pio test -e boardtest): same tests, real Sqlite3Esp32 on the SD card.
+#include <Arduino.h>
+#include <SPI.h>
+#include <SD.h>
+#include "board_pins.h"
+static const char* TMP_DB = "/sd/test_local_store_tmp.db";
+#else
 static const char* TMP_DB = "test_local_store_tmp.db";
+#endif
 
 void setUp() {}
-void tearDown() { std::remove(TMP_DB); }
+void tearDown() {
+#ifdef ARDUINO
+    SD.remove(TMP_DB + 3);   // SD paths are relative to the /sd mount
+#else
+    std::remove(TMP_DB);
+#endif
+}
 
 static MirrorFilament fil(int id, const char* vendor, const char* name, const char* color, const char* cfs = "") {
     MirrorFilament f;
@@ -45,7 +60,7 @@ static NewSpool newSpool() {
 }
 
 void test_open_creates_schema_and_db_id() {
-    std::remove(TMP_DB);
+    tearDown();
     std::string id1;
     {
         LocalStore st;
@@ -210,7 +225,7 @@ void test_failed_pull_leaves_mirror() {
 }
 
 void test_mark_sent_survives_reopen() {
-    std::remove(TMP_DB);
+    tearDown();
     {
         LocalStore st; TEST_ASSERT_TRUE(st.open(TMP_DB));
         pullBasic(st);
@@ -261,7 +276,7 @@ void test_not_open_fails_safely() {
     TEST_ASSERT_FALSE(st.queueLinkTag(5, "04A2B3C4", false));
 }
 
-int main(int, char**) {
+static int runAll() {
     UNITY_BEGIN();
     RUN_TEST(test_open_creates_schema_and_db_id);
     RUN_TEST(test_replace_mirror_lists_spools);
@@ -278,3 +293,16 @@ int main(int, char**) {
     RUN_TEST(test_not_open_fails_safely);
     return UNITY_END();
 }
+
+#ifdef ARDUINO
+static SPIClass testSpi(FSPI);
+void setup() {
+    delay(2000);
+    testSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+    if (!SD.begin(PIN_SD_CS, testSpi, 20000000, "/sd")) Serial.println("SD mount failed");
+    runAll();
+}
+void loop() {}
+#else
+int main(int, char**) { return runAll(); }
+#endif

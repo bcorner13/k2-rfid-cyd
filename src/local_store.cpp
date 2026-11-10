@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
 #ifdef ARDUINO
 #include <esp_random.h>
 #else
@@ -30,8 +31,11 @@ const char* SCHEMA_SQL =
 // Prepared statement with RAII finalize.
 class Stmt {
 public:
-    Stmt(sqlite3* db, const char* sql) {
-        if (db && sqlite3_prepare_v2(db, sql, -1, &st_, nullptr) != SQLITE_OK) st_ = nullptr;
+    Stmt(sqlite3* db, const char* sql) : db_(db) {
+        if (db && sqlite3_prepare_v2(db, sql, -1, &st_, nullptr) != SQLITE_OK) {
+            std::printf("LocalStore: prepare failed: %s -- %.80s\n", sqlite3_errmsg(db), sql);
+            st_ = nullptr;
+        }
     }
     ~Stmt() { if (st_) sqlite3_finalize(st_); }
     explicit operator bool() const { return st_ != nullptr; }
@@ -40,7 +44,12 @@ public:
     Stmt& i64(int i, int64_t v) { sqlite3_bind_int64(st_, i, v); return *this; }
     Stmt& real(int i, double v) { sqlite3_bind_double(st_, i, v); return *this; }
     bool step() { return st_ && sqlite3_step(st_) == SQLITE_ROW; }
-    bool run() { return st_ && sqlite3_step(st_) == SQLITE_DONE; }
+    bool run() {
+        if (!st_) return false;
+        const int rc = sqlite3_step(st_);
+        if (rc != SQLITE_DONE) std::printf("LocalStore: step failed (%d): %s\n", rc, sqlite3_errmsg(db_));
+        return rc == SQLITE_DONE;
+    }
     int64_t colI(int c) const { return sqlite3_column_int64(st_, c); }
     double colD(int c) const { return sqlite3_column_double(st_, c); }
     std::string colS(int c) const {
@@ -48,6 +57,7 @@ public:
         return t ? reinterpret_cast<const char*>(t) : "";
     }
 private:
+    sqlite3* db_ = nullptr;
     sqlite3_stmt* st_ = nullptr;
 };
 
@@ -190,17 +200,23 @@ bool LocalStore::replaceMirror(const std::vector<spoolman::MirrorFilament>& fila
                  .text(6, f.colorHex).text(7, joinColors(f.multiColors)).text(8, f.direction).text(9, f.cfsId)
                  .real(10, f.weightG).i64(11, f.nozzleC).i64(12, f.bedC).run();
     }
+    // Display fields are copied from the spool's filament; a missing filament leaves them empty.
+    // Looked up here, not with INSERT ... SELECT: Sqlite3Esp32 builds with YYSTACKDEPTH 20, and a
+    // join with coalesce() overflows its parser ("parser stack overflow", seen on the board).
+    std::unordered_map<int, const spoolman::MirrorFilament*> byId;
+    for (const auto& f : filaments) byId[f.id] = &f;
+    const spoolman::MirrorFilament none;
     for (size_t i = 0; ok && i < spools.size(); ++i) {
         const auto& s = spools[i];
-        // Display fields are copied from the spool's filament; a missing filament leaves them empty.
+        auto it = byId.find(s.filamentId);
+        const spoolman::MirrorFilament& f = it != byId.end() ? *it->second : none;
         ok = Stmt(db_, "INSERT OR REPLACE INTO spool(id, filament_id, vendor, name, material, color_hex, multi_colors,"
                        " direction, cfs_id, initial_g, has_remaining, remaining_g, location, archived, pending)"
-                       " SELECT ?1, ?2, coalesce(f.vendor,''), coalesce(f.name,''), coalesce(f.material,''),"
-                       " coalesce(f.color_hex,''), coalesce(f.multi_colors,''), coalesce(f.direction,''),"
-                       " coalesce(f.cfs_id,''), ?3, ?4, ?5, ?6, ?7, 0"
-                       " FROM (SELECT 1) LEFT JOIN filament f ON f.id = ?2")
-                 .i64(1, s.id).i64(2, s.filamentId).real(3, s.initialG).i64(4, s.hasRemaining ? 1 : 0)
-                 .real(5, s.remainingG).text(6, s.location).i64(7, s.archived ? 1 : 0).run();
+                       " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)")
+                 .i64(1, s.id).i64(2, s.filamentId).text(3, f.vendor).text(4, f.name).text(5, f.material)
+                 .text(6, f.colorHex).text(7, joinColors(f.multiColors)).text(8, f.direction).text(9, f.cfsId)
+                 .real(10, s.initialG).i64(11, s.hasRemaining ? 1 : 0).real(12, s.remainingG).text(13, s.location)
+                 .i64(14, s.archived ? 1 : 0).run();
         for (size_t t = 0; ok && t < s.uids.size(); ++t) {
             ok = Stmt(db_, "INSERT OR REPLACE INTO tag(uid, spool_id) VALUES(?, ?)").text(1, s.uids[t]).i64(2, s.id).run();
         }

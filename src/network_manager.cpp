@@ -1,3 +1,4 @@
+#include <spoolman_sync.h>
 #include <network_manager.h>
 #include <LittleFS.h>
 #include <esp_heap_caps.h>
@@ -24,12 +25,20 @@ void AppNetwork::init() {
             config.data.spoolman_url.trim();
         }
         config.save();
+        spoolmanSync.setBaseUrl(config.data.spoolman_url.c_str());
+        spoolmanSync.kick();
         Serial.println("Printer IP and Spoolman URL saved from WiFi Portal");
     });
 }
 
 void AppNetwork::process() {
     wm.process();
+    // Clock for "synced <time>" labels; there is no RTC driver yet (offline-inventory spec).
+    static bool clockStarted = false;
+    if (!clockStarted && WiFi.status() == WL_CONNECTED) {
+        configTzTime("EST5EDT,M3.2.0,M11.1.0", "pool.ntp.org", "time.nist.gov");
+        clockStarted = true;
+    }
 }
 
 bool AppNetwork::connect() {

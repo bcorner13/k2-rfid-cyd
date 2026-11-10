@@ -79,6 +79,16 @@ void test_url_too_long_fails() {
     TEST_ASSERT_EQUAL(UrlResult::TooLong, buildLookupUrl("http://spoolman.lan:7912", "04A2B3C4", url, sizeof(url)));
 }
 
+void test_api_url_any_path() {
+    char url[URL_BUF];
+    TEST_ASSERT_EQUAL(UrlResult::Ok, buildApiUrl(" 192.0.2.196:7912/ ", "/filament?limit=50&offset=100", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://192.0.2.196:7912/api/v1/filament?limit=50&offset=100", url);
+    TEST_ASSERT_EQUAL(UrlResult::Disabled, buildApiUrl("  ", "/spool", url, sizeof(url)));
+    TEST_ASSERT_EQUAL(UrlResult::HttpsUnsupported, buildApiUrl("https://x", "/spool", url, sizeof(url)));
+    char small[20];
+    TEST_ASSERT_EQUAL(UrlResult::TooLong, buildApiUrl("http://spoolman.lan:7912", "/spool", small, sizeof(small)));
+}
+
 // ---- parseLookup ----
 
 void test_parse_found() {
@@ -173,6 +183,7 @@ int main() {
     RUN_TEST(test_url_https_is_reported_not_silently_downgraded);
     RUN_TEST(test_url_empty_means_disabled);
     RUN_TEST(test_url_too_long_fails);
+    RUN_TEST(test_api_url_any_path);
     RUN_TEST(test_parse_found);
     RUN_TEST(test_parse_empty_list_is_not_found);
     RUN_TEST(test_parse_spool_without_this_tag_is_a_mismatch);

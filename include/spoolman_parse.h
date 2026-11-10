@@ -48,9 +48,9 @@ inline bool normalizeUid(const char* in, char* out, size_t outSize) {
     return true;
 }
 
-// `normalizedUid` must already be hex, so it needs no URL encoding. Archived spools are included:
-// otherwise a tag on an archived spool would look unknown, and linking it later would hit a 409.
-inline UrlResult buildLookupUrl(const char* baseUrl, const char* normalizedUid, char* out, size_t outSize) {
+// `<base>/api/v1<pathAndQuery>` from the configured base URL ("http://" added when missing,
+// surrounding whitespace and trailing slashes dropped). https is reported, never downgraded.
+inline UrlResult buildApiUrl(const char* baseUrl, const char* pathAndQuery, char* out, size_t outSize) {
     while (*baseUrl && std::isspace(static_cast<unsigned char>(*baseUrl))) ++baseUrl;
     size_t len = std::strlen(baseUrl);
     while (len > 0 && (std::isspace(static_cast<unsigned char>(baseUrl[len - 1])) || baseUrl[len - 1] == '/')) --len;
@@ -63,10 +63,18 @@ inline UrlResult buildLookupUrl(const char* baseUrl, const char* normalizedUid, 
     for (size_t i = 0; isHttps && i < 8; ++i) isHttps = std::tolower(static_cast<unsigned char>(baseUrl[i])) == httpsScheme[i];
     if (isHttps) return UrlResult::HttpsUnsupported;  // needs TLS client + cert handling; never downgrade silently
 
-    const int written = std::snprintf(out, outSize, "%s%.*s/api/v1/spool?tag=%s&allow_archived=true",
-                                      hasHttp ? "" : httpScheme, static_cast<int>(len), baseUrl, normalizedUid);
+    const int written = std::snprintf(out, outSize, "%s%.*s/api/v1%s",
+                                      hasHttp ? "" : httpScheme, static_cast<int>(len), baseUrl, pathAndQuery);
     if (written < 0 || static_cast<size_t>(written) >= outSize) return UrlResult::TooLong;
     return UrlResult::Ok;
+}
+
+// `normalizedUid` must already be hex, so it needs no URL encoding. Archived spools are included:
+// otherwise a tag on an archived spool would look unknown, and linking it later would hit a 409.
+inline UrlResult buildLookupUrl(const char* baseUrl, const char* normalizedUid, char* out, size_t outSize) {
+    char path[64];
+    std::snprintf(path, sizeof(path), "/spool?tag=%s&allow_archived=true", normalizedUid);
+    return buildApiUrl(baseUrl, path, out, outSize);
 }
 
 namespace detail {
