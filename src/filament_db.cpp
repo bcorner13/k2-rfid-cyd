@@ -4,31 +4,8 @@
 #include <LittleFS.h>
 #include <esp_heap_caps.h> // Required for heap_caps_malloc, heap_caps_free
 #include <StreamUtils.h>   // Include StreamUtils library
-
-// Custom allocator to force memory into PSRAM
-struct SpiRamAllocator : ArduinoJson::Allocator {
-  void* allocate(size_t size) override {
-    void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-    if (ptr == nullptr) {
-        Serial.printf("ERROR: PSRAM Alloc FAILED for %u bytes! Free PSRAM: %u\n", size, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    }
-    return ptr;
-  }
-  void deallocate(void* pointer) override {
-    heap_caps_free(pointer);
-  }
-  void* reallocate(void* ptr, size_t new_size) override {
-    void* new_ptr = heap_caps_realloc(ptr, new_size, MALLOC_CAP_SPIRAM);
-    if (new_ptr == nullptr) {
-        Serial.printf("ERROR: PSRAM Realloc FAILED for %u bytes (from %p)! Free PSRAM: %u\n", new_size, ptr, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    }
-    return new_ptr;
-  }
-  virtual ~SpiRamAllocator() = default; // Added virtual destructor
-};
-
-// Declare a static instance of the allocator
-static SpiRamAllocator psramAllocator;
+#include <psram_allocator.h>
+#include <color_names.h>
 
 FilamentDB filamentDB;
 
@@ -73,16 +50,18 @@ bool FilamentDB::loadDatabase() {
        blocks went to internal RAM: the 711 KB printer DB drove internal
        MinFree to 1.2 KB at boot.
        ---------------------------------------------------- */
-    JsonDocument doc(&psramAllocator);
+    JsonDocument doc(psramJsonAllocator());
 
     // Keep only the fields read below; printer entries carry dozens more.
-    JsonDocument filter(&psramAllocator);
+    JsonDocument filter(psramJsonAllocator());
     JsonObject fBase = filter["result"]["list"][0]["base"].to<JsonObject>();
     fBase["id"] = true;
     fBase["brand"] = true;
     fBase["name"] = true;
     fBase["meterialType"] = true;
     fBase["colors"] = true;
+    fBase["mixColorInfoList"][0]["colorEn"] = true;    // colour names, matched by hex
+    fBase["mixColorInfoList"][0]["hexValue"] = true;
     JsonObject fKv = filter["result"]["list"][0]["kvParam"].to<JsonObject>();
     fKv["nozzle_temperature"] = true;
     fKv["hot_plate_temp"] = true;
@@ -145,9 +124,13 @@ bool FilamentDB::loadDatabase() {
         profile.material_type.trim();
 
         JsonArray colors = base["colors"];
+        JsonArrayConst mix = base["mixColorInfoList"];
         for (JsonVariant c : colors) {
             const char* s = c.as<const char*>();
-            if (s && s[0] == '#') profile.colors.push_back(strtoul(s + 1, nullptr, 16));
+            if (!s || s[0] != '#') continue;
+            const uint32_t rgb = strtoul(s + 1, nullptr, 16);
+            profile.colors.push_back(rgb);
+            profile.color_names.push_back(String(::productColorName(mix, rgb).c_str()));
         }
         if (!colors.isNull() && colors.size() > 0) {
             profile.color_name = colors[0].as<String>();
@@ -239,4 +222,14 @@ String FilamentDB::getProductOptionsForDropdown(const String& brand, const Strin
         result += p.name;
     }
     return result;
+}
+
+String FilamentDB::productColorName(const String& id, uint32_t rgb) const {
+    for (const auto& p : cache) {
+        if (p.id != id) continue;
+        for (size_t i = 0; i < p.colors.size() && i < p.color_names.size(); i++)
+            if (p.colors[i] == rgb) return p.color_names[i];
+        return "";
+    }
+    return "";
 }

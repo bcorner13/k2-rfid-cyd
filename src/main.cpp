@@ -260,6 +260,13 @@ static void serial_console() {
             spoolmanSync.setBaseUrl(config.data.spoolman_url.c_str());
             spoolmanSync.kick();
             Serial.printf("CONSOLE: spoolman_url set to \"%s\"\n", config.data.spoolman_url.c_str());
+        } else if (strcmp(line, "printer") == 0) {
+            Serial.printf("CONSOLE: printer_ip=\"%s\"\n", config.data.printer_ip.c_str());
+        } else if (strncmp(line, "printer ", 8) == 0) {   // same as the portal's "Printer IP" field
+            config.data.printer_ip = String(line + 8);
+            config.data.printer_ip.trim();
+            config.save();
+            Serial.printf("CONSOLE: printer_ip set to \"%s\"\n", config.data.printer_ip.c_str());
         } else if (strcmp(line, "state") == 0) {
             TaskHandle_t t = xTaskGetHandle("spoolsync");
             Serial.printf("CONSOLE: sync state=%d lastPull=%lld sd=%d (%s) task=%d stackFree=%u\n",
@@ -270,7 +277,7 @@ static void serial_console() {
             spoolmanSync.kick();
             Serial.println("CONSOLE: sync started");
         } else {
-            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | sync | state)\n", line);
+            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | sync | state)\n", line);
         }
     }
 }

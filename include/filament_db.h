@@ -40,6 +40,8 @@ public:
     String getMaterialTypeOptionsForDropdown() const;
     /** Product names for one brand + material type, newline-separated, in DB order. Empty if none. */
     String getProductOptionsForDropdown(const String& brand, const String& type) const;
+    /** The DB's name for one of a product's colours ("Dark Green"), or "" if it has none. */
+    String productColorName(const String& id, uint32_t rgb) const;
 
 private:
     std::vector<FilamentProfile> cache;

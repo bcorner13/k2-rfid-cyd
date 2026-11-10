@@ -1,4 +1,5 @@
 #pragma once
+#include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFiManager.h>
 
@@ -42,7 +43,7 @@ private:
     static String computeSHA256(const uint8_t* data, size_t length);
 
     // P1.10: Validate expected schema structure
-    static bool validateDBSchema(const uint8_t* data, size_t length, uint16_t& profileCount);
+    static bool validateDBSchema(JsonDocument& doc, uint16_t& profileCount);
 
     // K2 FW 1.1.5.5+: per-model DB lives under /downloads/defData/material/.
     // Builds http://{ip}/downloads/defData/material/{model}_material_database.json

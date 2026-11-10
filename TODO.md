@@ -292,7 +292,16 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
 - Export/import inventory via USB or WiFi download
 - NeoPixel RGB status LED option (single-pin, replaces separate red/green LEDs)
 - WiFi portal close harmless error (`WebServer.cpp:638`) — investigate or suppress
+- Inventory list filter/search (material, colour, vendor, location) once it holds dozens of spools
+  (Bradley, 2026-11-09).
+- Screen slides diagonally for a few seconds during Settings → Update DB (2026-11-09). Likely cause
+  (inferred, not measured): the ~430 KB LittleFS write stalls PSRAM, which holds the RGB frame buffer;
+  LovyanGFX 1.2.35 `Bus_RGB` has no bounce buffer but relinks DMA each frame, so it recovers. Options:
+  keep the material DB on the SD card (SPI writes don't stall PSRAM), or an "Updating..." screen.
+- Printer address for Update DB is `config.printer_ip` (portal field, or serial `printer <ip>`). It was
+  the default `192.168.1.100` until 2026-11-09; set to `192.0.2.107`. Change to `.106`/`printer.lan`
+  once the printer takes its reserved address.
 
 ---
 
-*Last updated: 2026-10-29*
+*Last updated: 2026-11-09*

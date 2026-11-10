@@ -1,4 +1,5 @@
 #include <dropdown_match.h>
+#include <color_names.h>
 #include <ui/screens/screen_main.h>
 #include <spool_data.h>
 #include <filament_db.h>
@@ -108,8 +109,11 @@ void ScreenMain::init() {
     lv_obj_add_flag(colorBlock, LV_OBJ_FLAG_CLICKABLE);
 
     labelHexColor = lv_label_create(colorBlock);
-    lv_label_set_text(labelHexColor, "#FFFFFF");
-    lv_obj_set_style_text_font(labelHexColor, &lv_font_montserrat_24, 0);
+    lv_label_set_text(labelHexColor, "White\n#FFFFFF");
+    lv_label_set_long_mode(labelHexColor, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(labelHexColor, 180);
+    lv_obj_set_style_text_align(labelHexColor, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(labelHexColor, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(labelHexColor, lv_color_black(), 0);
     lv_obj_set_align(labelHexColor, LV_ALIGN_CENTER);
 
@@ -291,7 +295,12 @@ void ScreenMain::update(const SpoolData& data) {
 
     lv_obj_set_style_bg_color(colorBlock, lv_color_hex(data.getColorHex()), 0);
     lv_obj_set_style_text_color(labelHexColor, contrasting_text_color(data.getColorHex()), 0);
-    lv_label_set_text(labelHexColor, data.getColorName().c_str());
+    {   // "Dark Green\n#212721" from the product's own colour names, else "~Red\n#E00000"
+        const String name = filamentDB.productColorName(data.getMaterialId().c_str(), data.getColorHex());
+        char label[64];
+        formatColorLabel(name.c_str(), data.getColorHex(), label, sizeof(label));
+        lv_label_set_text(labelHexColor, label);
+    }
     // Highlight the matching size; a tag with a size we don't offer (e.g. 600 g) shows none.
     lv_buttonmatrix_clear_button_ctrl_all(btnmWeight, LV_BUTTONMATRIX_CTRL_CHECKED);
     {

@@ -1,3 +1,4 @@
+#include <color_names.h>
 #include <esp_task_wdt.h>
 #include <ui/ui_manager.h>
 #include <ui/color_palette.h>
@@ -31,27 +32,6 @@ UIManager ui;
 static constexpr uint32_t WRITE_ARM_TIMEOUT_MS = 30000;
 static bool     s_writeAllowOverwrite = false;
 static uint32_t s_writeArmedMs = 0;
-
-// Nearest plain color name for an RGB value (tags and the DB store hex only).
-static const char* colorName(uint32_t rgb) {
-    static const struct { const char* name; uint32_t rgb; } kColors[] = {
-        {"Black", 0x000000}, {"White", 0xFFFFFF}, {"Grey", 0x808080}, {"Silver", 0xC0C0C0},
-        {"Red", 0xE53935},   {"Orange", 0xFB8C00}, {"Yellow", 0xFDD835}, {"Gold", 0xC9A227},
-        {"Green", 0x43A047}, {"Lime", 0x9CCC65},  {"Teal", 0x00897B},   {"Blue", 0x1E88E5},
-        {"Navy", 0x1A237E},  {"Purple", 0x8E24AA}, {"Pink", 0xEC407A},  {"Brown", 0x795548},
-        {"Beige", 0xD7CCA1},
-    };
-    const char* best = kColors[0].name;
-    uint32_t bestDist = UINT32_MAX;
-    for (const auto& c : kColors) {
-        int dr = (int)((rgb >> 16) & 0xFF) - (int)((c.rgb >> 16) & 0xFF);
-        int dg = (int)((rgb >> 8) & 0xFF) - (int)((c.rgb >> 8) & 0xFF);
-        int db = (int)(rgb & 0xFF) - (int)(c.rgb & 0xFF);
-        uint32_t d = dr * dr + dg * dg + db * db;
-        if (d < bestDist) { bestDist = d; best = c.name; }
-    }
-    return best;
-}
 
 static void overwrite_confirm_cb(lv_event_t* e) {
     ui.writeConfirmPending = false;
@@ -131,9 +111,11 @@ void UIManager::onTagForWrite() {
         // e.g. "Creality CR-Silk\nColor #000000  -  1000 g"
         const std::string name = existing.getDisplayName().empty()
             ? ("Material " + existing.getMaterialId()) : (existing.getBrand() + " " + existing.getDisplayName());
-        char msg[160];
+        String cname = filamentDB.productColorName(existing.getMaterialId().c_str(), existing.getColorHex());
+        if (cname.isEmpty()) cname = String("~") + nearestColorName(existing.getColorHex());
+        char msg[192];
         snprintf(msg, sizeof(msg), "This tag already holds:\n\n%s\n%s (%s)  -  %u g\n\nReplace it with the selected filament?",
-                 name.c_str(), colorName(existing.getColorHex()), existing.getColorName().c_str(), existing.getWeight());
+                 name.c_str(), cname.c_str(), existing.getColorName().c_str(), existing.getWeight());
         writeConfirmPending = true;
         lv_obj_t* mbox = lv_msgbox_create(NULL);
         lv_msgbox_add_title(mbox, "Overwrite tag?");
@@ -703,9 +685,28 @@ static lv_obj_t* makeSwatchRow(lv_obj_t* parent) {
     return row;
 }
 
-static void addSwatch(lv_obj_t* row, uint32_t hex) {
+static lv_color_t swatchTextColor(uint32_t hex) {
+    const float lum = (0.299f * ((hex >> 16) & 0xFF) + 0.587f * ((hex >> 8) & 0xFF) + 0.114f * (hex & 0xFF)) / 255.0f;
+    return lum > 0.5f ? lv_color_black() : lv_color_white();
+}
+
+// name != nullptr: a wider swatch with the colour's name inside (product colours).
+static void addSwatch(lv_obj_t* row, uint32_t hex, const char* name = nullptr) {
     lv_obj_t* btn = lv_btn_create(row);
-    lv_obj_set_size(btn, 48, 48);
+    if (name && name[0]) {
+        lv_obj_set_size(btn, 104, 56);
+        lv_obj_t* l = lv_label_create(btn);
+        lv_label_set_text(l, name);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(l, 96);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(l, swatchTextColor(hex), 0);
+        lv_obj_center(l);
+        lv_obj_clear_flag(l, LV_OBJ_FLAG_CLICKABLE);   // taps go to the swatch (its user data holds the colour)
+    } else {
+        lv_obj_set_size(btn, 48, 48);
+    }
     lv_obj_set_style_bg_color(btn, lv_color_hex(hex), 0);
     lv_obj_set_style_radius(btn, 6, 0);
     lv_obj_set_style_pad_all(btn, 0, 0);
@@ -780,7 +781,8 @@ void UIManager::showColorPicker() {
                 filamentDB.getProfileById(currentSpool.getMaterialId().c_str(), prof) && !prof.colors.empty();
     if (have) {
         lv_label_set_text_fmt(pickerProductLabel, "%s colors", prof.name.c_str());
-        for (uint32_t c : prof.colors) addSwatch(pickerProductRow, c);
+        for (size_t i = 0; i < prof.colors.size(); i++)
+            addSwatch(pickerProductRow, prof.colors[i], i < prof.color_names.size() ? prof.color_names[i].c_str() : nullptr);
         lv_obj_clear_flag(pickerProductLabel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(pickerProductRow, LV_OBJ_FLAG_HIDDEN);
     } else {

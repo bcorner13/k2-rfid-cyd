@@ -6,6 +6,8 @@
 #include <config_manager.h>
 #include <spoolman_parse.h>
 #include "mbedtls/sha256.h"
+#include <psram_allocator.h>
+#include <material_db_merge.h>
 
 AppNetwork network;
 
@@ -111,16 +113,8 @@ String AppNetwork::computeSHA256(const uint8_t* data, size_t length) {
 // ---------------------------------------------------------------------------
 // P1.10: Validate expected DB schema — checks for result.list[] with base.id
 // ---------------------------------------------------------------------------
-bool AppNetwork::validateDBSchema(const uint8_t* data, size_t length, uint16_t& profileCount) {
+bool AppNetwork::validateDBSchema(JsonDocument& doc, uint16_t& profileCount) {
     profileCount = 0;
-
-    // Parse into a temporary doc to check structure
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, (const char*)data, length);
-    if (err) {
-        Serial.printf("Schema validation: JSON parse failed: %s\n", err.c_str());
-        return false;
-    }
 
     // Check for expected structure: result.list[] array
     JsonArray list = doc["result"]["list"].as<JsonArray>();
@@ -183,6 +177,7 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
     if (httpCode != HTTP_CODE_OK) {
         result.message = "Cannot reach printer (HTTP " + String(httpCode) + ")";
         _lastError = result.message;
+        Serial.println("DB update: " + result.message);
         http.end();
         return result;
     }
@@ -257,23 +252,59 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
         return result;
     }
 
-    // FSD 5.6 step 7: Validate schema
-    uint16_t profileCount = 0;
-    bool schemaOk = validateDBSchema(dbBuf, totalRead, profileCount);
+    // FSD 5.6 step 7: Validate, then merge into the current DB instead of replacing it.
+    // The printer's factory file has fewer profiles and one colour per product (no names);
+    // replacing the file outright lost CR-Silk / Ender-PLA and every product colour.
+    JsonDocument incoming(psramJsonAllocator());
+    DeserializationError perr = deserializeJson(incoming, (const char*)dbBuf, totalRead);
+    free(dbBuf);   // the document holds its own copies of the strings
+    uint16_t downloadedCount = 0;
+    if (perr || !validateDBSchema(incoming, downloadedCount)) {
+        result.message = perr ? String("Update refused: printer DB is not valid JSON (") + perr.c_str() + ")"
+                              : String("Update refused: printer DB has an unknown format");
+        result.message += "; current DB kept";
+        _lastError = result.message;
+        Serial.println(result.message);
+        return result;
+    }
+
+    JsonDocument current(psramJsonAllocator());
+    {
+        File cur = LittleFS.open("/material_database.json", "r");
+        if (cur) {
+            DeserializationError cerr = deserializeJson(current, cur);
+            cur.close();
+            if (cerr) {
+                Serial.printf("DB update: current DB unreadable (%s), taking the download as is\n", cerr.c_str());
+                current.clear();
+            }
+        }
+    }
+    DbMergeStats st;
+    mergeMaterialDb(current, incoming, st);   // incoming has result.list (validated above)
+    current.clear();
+    const uint16_t profileCount = incoming["result"]["list"].size();
+    Serial.printf("DB merge: %u updated (%u kept their colours), %u new, %u kept from current; %u total. "
+                  "Free PSRAM %u\n", st.updated, st.coloursKept, st.added, st.keptLocalOnly, profileCount,
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     // Write to temp file for atomic replace
     File file = LittleFS.open("/material_database.json.tmp", "w");
     if (!file) {
-        free(dbBuf);
         result.message = "Storage error: cannot create temp file";
         _lastError = result.message;
         return result;
     }
-
-    file.write(dbBuf, totalRead);
+    const size_t written = serializeJson(incoming, file);
     file.flush();
     file.close();
-    free(dbBuf);
+    incoming.clear();
+    if (written == 0) {
+        LittleFS.remove("/material_database.json.tmp");
+        result.message = "Storage error: could not write merged DB";
+        _lastError = result.message;
+        return result;
+    }
 
     // Atomic replace
     if (LittleFS.exists("/material_database.json")) {
@@ -292,17 +323,14 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
     config.data.db_hash = newHash;
     config.data.db_updated_at = millis() / 1000;
     config.data.db_profile_count = profileCount;
-    config.data.db_schema_version = schemaOk ? 1 : 0;
+    config.data.db_schema_version = 1;
     config.save();
 
     result.success = true;
     result.skipped = false;
     result.profile_count = profileCount;
-    if (schemaOk) {
-        result.message = "Updated: " + String(profileCount) + " profiles";
-    } else {
-        result.message = "Updated (unknown schema): " + String(totalRead) + " bytes";
-    }
+    result.message = "Updated: " + String(profileCount) + " profiles (" + String(st.added) + " new, " +
+                     String(st.keptLocalOnly) + " kept from the device)";
 
     Serial.println(result.message);
     return result;
@@ -312,119 +340,5 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
 // Legacy updateFilamentDB (delegates to validated version)
 // ---------------------------------------------------------------------------
 bool AppNetwork::updateFilamentDB() {
-    _lastError = "";
-
-    if (!isConnected()) {
-        if (!connect()) {
-            _lastError = "WiFi not connected";
-            return false;
-        }
-        int timeout = 40;  // 20 seconds
-        while (WiFi.status() != WL_CONNECTED && timeout > 0) {
-            delay(500);
-            timeout--;
-        }
-        if (WiFi.status() != WL_CONNECTED) {
-            _lastError = "WiFi connection timed out";
-            return false;
-        }
-    }
-
-    // FSD Section 5.6: printer API endpoint
-    String url = buildDBURL(config.data.printer_ip, config.data.printer_model);
-    Serial.println("Updating from: " + url);
-
-    http.begin(url);
-    int httpCode = http.GET();
-
-    if (httpCode != HTTP_CODE_OK) {
-        _lastError = "HTTP error: " + String(httpCode);
-        Serial.printf("HTTP failed: %d\n", httpCode);
-        http.end();
-        return false;
-    }
-
-    // P0.4: Content-Length guard (FSD Section 14.2)
-    int contentLength = http.getSize();
-    if (contentLength > (int)DB_MAX_SIZE_BYTES) {
-        _lastError = "Database too large (" + String(contentLength / 1024) + " KB, max 512 KB)";
-        Serial.println(_lastError);
-        http.end();
-        return false;
-    }
-
-    // Content-Length -1 means unknown (chunked transfer) — allow but cap during write
-    if (contentLength > 0) {
-        Serial.printf("Database size: %d bytes\n", contentLength);
-    } else {
-        Serial.println("Content-Length unknown, will cap at 512 KB");
-    }
-
-    // Write to temp file for atomic replace
-    File file = LittleFS.open("/material_database.json.tmp", "w");
-    if (!file) {
-        _lastError = "Storage error: cannot create temp file";
-        http.end();
-        return false;
-    }
-
-    // Stream response to file with size cap
-    WiFiClient* stream = http.getStreamPtr();
-    size_t totalWritten = 0;
-    uint8_t buf[512];
-    bool oversized = false;
-
-    while (http.connected() && (contentLength > 0 || contentLength == -1)) {
-        size_t available = stream->available();
-        if (available == 0) {
-            delay(1);
-            continue;
-        }
-        size_t toRead = (available > sizeof(buf)) ? sizeof(buf) : available;
-        size_t bytesRead = stream->readBytes(buf, toRead);
-
-        if (totalWritten + bytesRead > DB_MAX_SIZE_BYTES) {
-            oversized = true;
-            break;
-        }
-
-        file.write(buf, bytesRead);
-        totalWritten += bytesRead;
-
-        if (contentLength > 0) {
-            contentLength -= bytesRead;
-        }
-    }
-
-    file.flush();
-    file.close();
-    http.end();
-
-    if (oversized) {
-        LittleFS.remove("/material_database.json.tmp");
-        _lastError = "Database too large (exceeded 512 KB during download)";
-        Serial.println(_lastError);
-        return false;
-    }
-
-    if (totalWritten == 0) {
-        LittleFS.remove("/material_database.json.tmp");
-        _lastError = "Empty response from printer";
-        return false;
-    }
-
-    // Atomic replace: remove old, rename temp
-    if (LittleFS.exists("/material_database.json")) {
-        LittleFS.remove("/material_database.json");
-    }
-    if (!LittleFS.rename("/material_database.json.tmp", "/material_database.json")) {
-        _lastError = "Storage error: rename failed";
-        return false;
-    }
-
-    Serial.printf("Database updated: %u bytes written\n", totalWritten);
-
-    // Reload database cache
-    filamentDB.init();
-    return true;
+    return updateFilamentDBWithValidation().success;   // sets _lastError on failure
 }
