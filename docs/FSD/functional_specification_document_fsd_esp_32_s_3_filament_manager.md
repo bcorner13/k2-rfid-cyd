@@ -91,6 +91,8 @@ The FSD serves as a stable reference for implementation, debugging, and future e
 
   **Sensor / ADC Input (development board only)**
 
+  > **Superseded (2026-11-22): this section describes the retired Waveshare board.** On the current MaTouch ESP32-S3 4.3" (V3.1), GPIO6 is RGB display data line G1, so it is **not** an ADC input, and the CS8501/J5/Sensor AD parts below do not exist. The MaTouch charges a 1S 3.7V LiPo on-board. Battery % comes from a **MAX17048 fuel gauge** (I2C 0x36, shared bus GPIO17/18, Adafruit #5580 / SparkFun) on the battery leads. Its charge rate (%/hr, positive = charging) drives the charging indicator. Keep the gauge on the battery side of any power switch.
+
   - **GPIO6** (ADC1_CH5) — routed to the **Sensor AD** header (J6, PH2.0 2-pin: GND, AD)
   - On-board voltage divider (÷3): input range 0–9.9V maps to 0–3.3V at the ADC pin
   - 12-bit resolution (0–4096), conversion: `voltage_mV = 3.3 / 4096 * 3 * adc_value * 1000`
@@ -140,6 +142,8 @@ The FSD serves as a stable reference for implementation, debugging, and future e
   > **Note:** A **single RGB NeoPixel (WS2812) LED** on IO15 or IO16 is also an option — one pin, any color (requires NeoPixel library, ~800 bytes RAM), eliminates the need for separate red/green LEDs.
 
   **Battery & Power**
+
+  > **Superseded (2026-11-22): this section describes the retired Waveshare board.** On the current MaTouch ESP32-S3 4.3" (V3.1), GPIO6 is RGB display data line G1, so it is **not** an ADC input, and the CS8501/J5/Sensor AD parts below do not exist. The MaTouch charges a 1S 3.7V LiPo on-board. Battery % comes from a **MAX17048 fuel gauge** (I2C 0x36, shared bus GPIO17/18, Adafruit #5580 / SparkFun) on the battery leads. Its charge rate (%/hr, positive = charging) drives the charging indicator. Keep the gauge on the battery side of any power switch.
 
   - **CS8501 (U2)** — LiPo charger + DC-DC boost converter (charges single-cell LiPo/18650 via USB and boosts to 5V for system power)
   - **J5** — PH2.0 2P battery connector for 3.7V LiPo / 18650 cell
@@ -2051,7 +2055,7 @@ Polish and resilience. Implement as time allows; system is functional without th
 | P2.4 | Network security hardening (validation checks) | 14.5 | P1.10 |
 | P2.5 | Memory budget monitoring (runtime heap logging) | 14.1 | — |
 | P2.6 | String length enforcement (truncation on parse/display) | 14.2 | — |
-| P2.7 | Battery monitoring & low-battery state | 16 (Future) | GPIO6 ADC (Sensor AD header) |
+| P2.7 | Battery monitoring & low-battery state | 16 (Future) | MAX17048 fuel gauge on I2C (0x36). Was GPIO6 ADC on the retired Waveshare board |
 | P2.8 | Save atomicity for config.json ✅ | 6.5.2 | P0.1 pattern | **Implemented.** `ConfigManager::save()` uses `atomicWriteJson()`; `init()` calls `recoverTmpFile()`. |
 
 ---
@@ -2059,8 +2063,8 @@ Polish and resilience. Implement as time allows; system is functional without th
 ## 16. Future Extensions
 
 - **Battery operation:** Portable use via 18650 / 3.7V LiPo cell connected to BAT1. The Waveshare 4.3C has full on-board charging and boost circuitry (CS8501). Software support needed:
-  - Battery voltage monitoring via **GPIO6 Sensor AD** header (dev board: on-board ÷3 divider on J6; 4.3C: EXIO_ADC via R18/R19 divider)
-  - Battery percentage estimation (voltage-to-SoC lookup table for Li-ion discharge curve)
+  - ~~Battery voltage monitoring via GPIO6 Sensor AD header~~ (Waveshare only; on MaTouch GPIO6 is display G1)
+  - **MaTouch:** battery % and charge state from a MAX17048 fuel gauge on I2C (0x36), replacing the voltage-to-SoC lookup table. UI hooks already exist: `UIManager::updateBattery()`, `labelBattStatus`, `LOW_BATTERY`
   - Low-battery warning state (`LOW_BATTERY` already defined in state machine)
   - Display brightness auto-dimming to extend runtime
   - Optional sleep mode with wake-on-touch (GT911 interrupt on GPIO4)
