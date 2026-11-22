@@ -1,5 +1,6 @@
 #pragma once
 #include <lvgl.h>
+#include "battery_logic.h"
 
 class ScreenMain {
 public:
@@ -8,6 +9,7 @@ public:
     void update(const class SpoolData& data);
     void setWriteStatus(const char* status, bool success = false, bool neutral = true);
     void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
+    void updateBattery(const battery::Status& s);   // empty when no gauge is fitted
     void setSpoolmanInfo(const char* text, uint32_t color = 0x606060);
 
     lv_obj_t* labelSpoolman;    /* tag's Spoolman record; separate from the status bar, which auto-read rewrites */
@@ -27,7 +29,7 @@ public:
 
     // Status bar (top 24px row)
     lv_obj_t* statusBar;
-    lv_obj_t* labelBattStatus;  /* battery placeholder icon */
+    lv_obj_t* labelBattStatus;  /* MAX17048 icon + %; empty with no gauge */
     lv_obj_t* labelWifiStatus;  /* wifi icon + SSID/state */
 };
 

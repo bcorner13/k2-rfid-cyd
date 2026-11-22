@@ -53,6 +53,7 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 | **Config** | `src/config_manager.cpp` | Persistent config (beep, WiFi) via LittleFS `config.json` |
 | **Network** | `src/network_manager.cpp` | WiFiManager portal, filament DB updates |
 | **State** | `src/system_state.cpp` | SystemState/SystemEvent enums with StateMachine transitions |
+| **Battery** | `src/battery_gauge.cpp`, `include/battery_gauge.h`, `include/battery_logic.h` | Optional MAX17048 fuel gauge (I2C 0x36), polled every 5 s from `loop()`, shown in the main status bar. Direct register reads (no reset). Classification is host-testable. Spec: `docs/hardware/battery-fuel-gauge.md` |
 | **Spoolman** | `src/spoolman_client.cpp`, `include/spoolman_client.h`, `include/spoolman_parse.h` | Read-only lookup by tag UID on its own FreeRTOS task; results polled from `loop()`. Parsing is host-testable |
 
 ### Data flow
@@ -111,7 +112,7 @@ JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
 
 > **Board in use: V3.1** (confirmed from PCB front silkscreen, 2026-03-10). Version number is printed near the Makerfabs logo. V3.1 adds an onboard SPK connector for a small speaker. GPIO pin assignments for I2C, GPIO, and display are the same as V1.3/V2.0. Audio/backlight behaviour for V3.1 TBD — treat as V2.0 (`-DBOARD_MATOUCH_V2`) until confirmed.
 
-- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch, PCF8563 RTC, Mabee I2C port, and PN532. No address conflicts: GT911=0x5D, PCF8563=0x51, PN532=0x24.
+- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch, PCF8563 RTC, Mabee I2C port, and PN532. No address conflicts: GT911=0x5D, PCF8563=0x51, PN532=0x24, MAX17048 fuel gauge=0x36 (optional; chained between the port and the PN532).
 - **Mabee I2C port** (HY2.0-4P, Grove-compatible) — pinout confirmed from V3.1 PCB silkscreen:
   - Pin 1 (bottom): GND
   - Pin 2: +3V3
@@ -129,7 +130,7 @@ JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
 - **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10. Board ships with 32GB MicroSD.
   - **SQLite on SD works** (`siara-cc/Sqlite3Esp32 @ 2.5.0`, measured 2026-11-09, `pio run -e sdtest` sketch in `test/sd_sqlite/`): `SPIClass(FSPI)` on those pins, `SD.begin(10, spi, 20000000, "/sd")`, open `/sd/<file>.db`. Use `page_size=4096` + `cache_size=-256` (the library defaults to a 1 KB cache, and bulk writes crawl), `journal_mode=TRUNCATE` (no WAL), `synchronous=FULL`. `PRAGMA integrity_check` is compiled out of the library. Survived 3/3 USB power cuts with no lost rows.
   - **Parser stack is 20 deep** (`YYSTACKDEPTH 20` in the library's `config_ext.h`, SQLite default 100). An `INSERT … SELECT` with a join and several `coalesce()` failed on the board with "parser stack overflow" but passed on the Mac. Keep statements flat, and run `pio test -e boardtest --upload-port <port> --test-port <port>` after any SQL change (port: `pio device list`, or `CLAUDE.local.md`): it runs `test_local_store` on the board itself.
-  - **Serial console** (main firmware, 115200): `url` prints the Spoolman URL, `url <value>` sets and saves it (same as the portal field), `printer` / `printer <ip>` does the same for the printer address used by Update DB, `sync` syncs now, `state` prints the sync state. `docker pause spoolman-test` reproduces a hung Spoolman (TCP accepts, no HTTP), like the real Spoolman host did on 2026-11-09.
+  - **Serial console** (main firmware, 115200): `url` prints the Spoolman URL, `url <value>` sets and saves it (same as the portal field), `printer` / `printer <ip>` does the same for the printer address used by Update DB, `sync` syncs now, `state` prints the sync state, `battery` prints the fuel-gauge reading. `docker pause spoolman-test` reproduces a hung Spoolman (TCP accepts, no HTTP), like the real Spoolman host did on 2026-11-09.
 - **Display:** ESP32-S3 native RGB peripheral → LCD module QT4300H40R10-V03 (panel IC: HX8664/HX8264). Driven in **16-bit RGB565** mode. Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1. Clock: 16 MHz. Note: "ST7262" label in older docs was incorrect — no such controller chip on this board.
 - **PSRAM:** 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
 - **Flash:** 16MB

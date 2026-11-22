@@ -63,6 +63,7 @@ public:
     void syncStatusText(char* out, size_t n);   // "Live - synced 14:05", "No SD card - ..."
     void clearSpoolmanInfo();
     void updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssid);
+    void updateBatteryStatus(const battery::Status& s);   // main-screen status bar
 
     // P1.9: Operation lock & UI guards (FSD Section 12.5)
     void updateButtonStates();  // Enable/disable buttons based on sysState

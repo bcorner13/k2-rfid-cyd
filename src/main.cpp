@@ -24,6 +24,7 @@
 #include <ui/ui_sound.h>
 #include <ui/screens/screen_about.h>
 #include "board_pins.h"
+#include <battery_gauge.h>
 
 void setup() {
     Serial.begin(115200);
@@ -69,6 +70,9 @@ void setup() {
             Serial.printf("  found 0x%02X\n", addr);
     }
     Serial.println("I2C scan done");
+    esp_task_wdt_reset();
+
+    batteryGauge.init();   // optional MAX17048 on 0x36; absent is fine
     esp_task_wdt_reset();
 
     rfid.init();
@@ -273,11 +277,18 @@ static void serial_console() {
                           (int)spoolmanSync.state(), (long long)spoolmanSync.lastPullEpoch(),
                           (int)sdStorage.available(), sdStorage.failure(), t ? (int)eTaskGetState(t) : -1,
                           t ? (unsigned)uxTaskGetStackHighWaterMark(t) : 0);
+        } else if (strcmp(line, "battery") == 0) {
+            const battery::Status& b = batteryGauge.status();
+            static const char* const CHARGE[] = { "unknown", "discharging", "charging", "full" };
+            static const char* const LEVEL[] = { "ok", "low", "critical" };
+            if (!b.present) Serial.println("CONSOLE: battery gauge not present (0x36)");
+            else Serial.printf("CONSOLE: battery %.3fV %.1f%% rate=%+.1f%%/hr %s level=%s\n", b.voltage,
+                               b.percent, b.rateHr, CHARGE[(int)b.charge], LEVEL[(int)b.level]);
         } else if (strcmp(line, "sync") == 0) {
             spoolmanSync.kick();
             Serial.println("CONSOLE: sync started");
         } else {
-            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | sync | state)\n", line);
+            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | sync | state | battery)\n", line);
         }
     }
 }
@@ -303,13 +314,15 @@ void loop() {
     network.process();
     rfid_task(); // 🟢 Run the auto-detection task
     ui.spoolmanTick();
+    batteryGauge.tick(now);
 
-    // Update status bar (battery placeholder + WiFi) every 2 seconds
+    // Update status bar (battery + WiFi) every 2 seconds
     static uint32_t last_status_ms = 0;
     if (now - last_status_ms >= 2000) {
         bool wifiOk = network.isConnected();
         int8_t rssi  = wifiOk ? (int8_t)WiFi.RSSI() : 0;
         ui.updateStatusBar(wifiOk, rssi, wifiOk ? WiFi.SSID().c_str() : nullptr);
+        ui.updateBatteryStatus(batteryGauge.status());
         last_status_ms = now;
     }
 

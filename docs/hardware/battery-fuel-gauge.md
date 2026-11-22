@@ -1,6 +1,6 @@
 # Battery fuel gauge (MAX17048): spec
 
-Status: **parts ordered 2026-11-22, not yet wired.** This is the driver spec to build against when they arrive.
+Status: **parts ordered 2026-11-22. Driver written on `feat/battery-gauge`; builds, and host tests pass. Not yet run on hardware.**
 
 ## Why
 
@@ -46,49 +46,38 @@ The gauge board adds its own pull-ups to the bus. If I2C becomes flaky (PN532 au
 
 ## Firmware
 
-### Library
-`adafruit/Adafruit MAX1704X` (add to `lib_deps` in the `matouch_s3_43` env). API used: `begin(&Wire)`, `cellVoltage()`, `cellPercent()`, `chargeRate()` (%/hr, signed), `isDeviceReady()`.
+### Driver: direct register reads, no library
+`include/battery_gauge.h` / `src/battery_gauge.cpp`, global `batteryGauge`. **Not** `Adafruit_MAX1704X`: its `begin()` sends a soft reset (CMD 0x5400, checked in v1.0.3 source), which would discard the gauge's state of charge on every boot. The driver reads four registers with `Wire`:
 
-**Verify before relying on it:** whether `begin()` issues a reset or quick-start. Doing that on every boot would discard the gauge's learned state, and the gauge stays powered while the device is off. Read the library source after installing it, and don't reset on boot.
+| Reg | Meaning | Scale |
+|---|---|---|
+| 0x02 VCELL | cell voltage | 78.125 µV/LSB |
+| 0x04 SOC | state of charge | 1/256 %/LSB |
+| 0x08 VERSION | presence check | `0x001x` (0xFFFF = chip present, no battery) |
+| 0x16 CRATE | charge rate | signed, 0.208 %/hr/LSB |
 
-### Module
-New `include/battery_gauge.h` + `src/battery_gauge.cpp`, global `battery` (project convention).
+- `init()` runs right after the boot I2C scan, before `rfid.init()`. With no gauge, `status().present == false` and the status bar shows nothing. The device works normally without one.
+- `tick(now)` runs from `loop()` and polls every **5 s**. It shares the loop task with PN532 auto-read and GT911 touch, so there's no cross-task I2C contention. A gauge missing at boot is re-probed, so hot-plugging works.
+- No library dependency, no reset, and chip defaults (hibernate thresholds, alerts) are left alone.
 
-- `init()`: after `Wire.begin`, before `ui.init()`. If 0x36 doesn't answer, set `present = false` and keep the battery UI hidden. **The device must keep working with no gauge** (USB-only units and the bench setup).
-- `tick(now)`: poll every **5 s** from `loop()`. Don't poll every loop: it shares the bus with PN532 auto-read.
-- Exposes a plain struct:
-
-```cpp
-struct BatteryStatus {
-    bool    present;      // gauge answered on 0x36
-    float   voltage;      // V
-    float   percent;      // 0–100, clamped (raw SoC can read >100 %)
-    float   rateHr;       // %/hr, + = charging
-    enum State { UNKNOWN, DISCHARGING, CHARGING, FULL, LOW, CRITICAL } state;
-};
-```
-
-### Classification (pure, host-testable)
-Put this in `include/battery_logic.h`, following the `spoolman_parse.h` pattern, and test it under `pio test -e native` (TDD):
-
-- `CHARGING`: `rateHr > +0.5` (hysteresis: leave the state only when `< +0.2`)
-- `FULL`: `percent >= 98` and `|rateHr| < 0.5` and `voltage >= 4.15`
-- `LOW`: `percent < 15`; `CRITICAL`: `percent < 5`. Fires `SystemEvent::BATTERY_CRITICAL`.
-- `DISCHARGING`: otherwise
-- Smooth the displayed % (e.g. EMA or ±1 % step limit) so the icon doesn't flicker.
-- Icon bucket: `LV_SYMBOL_BATTERY_EMPTY / _1 / _2 / _3 / _FULL` at <10 / <35 / <60 / <85 / ≥85 %, plus `LV_SYMBOL_CHARGE` when CHARGING.
-- The initial thresholds above are guesses. Tune them against real readings.
+### Classification: `include/battery_logic.h` (pure, `test/test_battery_logic`, 15 cases)
+- `Charging`: rate > +0.5 %/hr; stays charging until rate ≤ +0.2.
+- `Full`: SoC ≥ 98, |rate| < 0.5, V ≥ 4.15. Overrides charging.
+- Level `Low` < 15 %, `Critical` < 5 %, each clearing only 2 % above its threshold.
+- Displayed % is clamped to 0–100 and moves at most 1 % per poll. The first reading is shown as-is.
+- Icon: `LV_SYMBOL_BATTERY_EMPTY/_1/_2/_3/_FULL` at <10/<35/<60/<85/≥85 %, plus `LV_SYMBOL_CHARGE` while charging. Text: `72%`, `72%+`, or `Full`.
+- Colour: green when charging or full, amber when low, red when critical, grey otherwise.
+- The thresholds are first guesses. Tune them with the serial `battery` command.
 
 There's no USB-present signal. The gauge only sees the cell, so "plugged in" is inferred from CHARGING/FULL.
 
-### Existing hooks to wire (already in tree)
-- `ScreenMain::updateStatusBar()` (`src/ui/screens/screen_main.cpp:~268`). `labelBattStatus` shows a fixed grey `LV_SYMBOL_BATTERY_FULL` placeholder. Replace it with the real icon, %, and colour.
-- `UIManager::updateBattery(float voltage)` + `labelBattery` overlay (`src/ui/ui_manager.cpp:~868–884`). Hidden. Its current "<1 V = USB" logic is a Waveshare-era placeholder. Change the signature to take `BatteryStatus`, or delete it if the status-bar icon is enough.
-- The 2 s status-bar refresh in `loop()` (`src/main.cpp:~307`) is where to push the battery state.
-- `SystemState::LOW_BATTERY` / `SystemEvent::BATTERY_CRITICAL` (`include/system_state.h`, `src/system_state.cpp:91`) exist but are never fired.
+### UI wiring
+- `ScreenMain::updateBattery(const battery::Status&)` drives `labelBattStatus`. It is called from the 2 s status-bar refresh in `loop()` via `UIManager::updateBatteryStatus()`. With no gauge the label text is empty rather than hidden, so the status text stays centred.
+- **Not wired, on purpose:** `SystemEvent::BATTERY_CRITICAL` → `SystemState::LOW_BATTERY`. That state only exits on `WAKE_UP`, which nothing sends, so firing it would strand the UI. A low-battery state needs its own design (what's blocked, how to leave) before it's connected.
+- The old `UIManager::updateBattery(float)` + `labelBattery` overlay (hidden, Waveshare-era "<1 V = USB") is untouched and unused.
 
 ### Serial console
-Add a `battery` command alongside `url` / `printer` / `sync` / `state`. It prints present, V, %, rate, and state. Use it to tune the thresholds.
+`battery` prints `present / V / % / rate / charge state / level`.
 
 ## Verification on hardware
 1. The boot scan lists 0x36 together with 0x24, 0x51, and 0x5D.

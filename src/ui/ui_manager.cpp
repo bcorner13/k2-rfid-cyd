@@ -641,6 +641,10 @@ void UIManager::updateStatusBar(bool wifiConnected, int8_t rssi, const char* ssi
     screenMain.updateStatusBar(wifiConnected, rssi, ssid);
 }
 
+void UIManager::updateBatteryStatus(const battery::Status& s) {
+    screenMain.updateBattery(s);
+}
+
 void UIManager::createOverlay() {
     layerTop = lv_display_get_layer_top(lv_display_get_default());
     lv_obj_clear_flag(layerTop, LV_OBJ_FLAG_SCROLLABLE);  /* prevent touch from scrolling whole screen */
