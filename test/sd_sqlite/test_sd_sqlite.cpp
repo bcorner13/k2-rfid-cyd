@@ -1,6 +1,6 @@
 // Go/no-go test for offline inventory: SQLite on the MaTouch SD card.
 // Plan: docs/superpowers/plans/2026-11-09-offline-inventory.md, Task 1.
-// Build/flash: pio run -e sdtest -t upload --upload-port /dev/cu.usbserial-XXXX
+// Build/flash: pio run -e sdtest -t upload --upload-port <port>
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>

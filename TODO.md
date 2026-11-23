@@ -299,8 +299,8 @@ tags to spools by hardware UID (`POST /spool/{id}/tag`, `GET /spool?tag=<uid>`, 
   LovyanGFX 1.2.35 `Bus_RGB` has no bounce buffer but relinks DMA each frame, so it recovers. Options:
   keep the material DB on the SD card (SPI writes don't stall PSRAM), or an "Updating..." screen.
 - Printer address for Update DB is `config.printer_ip` (portal field, or serial `printer <ip>`). It was
-  the default `192.168.1.100` until 2026-11-09; set to `192.0.2.107`. Change to `.106`/`printer.lan`
-  once the printer takes its reserved address.
+  the default `192.168.1.100` until 2026-11-09. Update it once the printer takes its DHCP-reserved address
+  (current values: `CLAUDE.local.md`).
 
 ---
 

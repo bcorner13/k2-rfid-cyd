@@ -22,7 +22,7 @@
 - Pull pages are `limit=50&offset=N`, looping until a page returns fewer than 50 items. Don't rely on the `x-total-count` header.
 - Sync timing (my call): every 5 min while online, immediately after a local change. Offline back-off 30 s → 60 s → 120 s → 300 s cap. Reset on success.
 - Timestamps: NTP via `configTime` with TZ `EST5EDT,M3.2.0,M11.1.0` (my call). With no valid clock (year < 2026), show "synced N min ago" from `millis()`, or "never synced".
-- Flashing: firmware only, `pio run -t upload --upload-port /dev/cu.usbserial-XXXX`. **Never `uploadfs`** (it wipes `config.json`). **Tell Bradley before every flash or reset**, as its own message.
+- Flashing: firmware only, `pio run -t upload --upload-port <port>`. **Never `uploadfs`** (it wipes `config.json`). **Tell Bradley before every flash or reset**, as its own message.
 - Commit only when Bradley says so. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Branch `feat/spoolman-lookup`.
 - Live Spoolman tests use a disposable spool and tag, and are confirmed in Spoolman's web UI (integration doc, "Testing"). No writes to the real Pi's Spoolman until Task 8's checkpoint.
 
@@ -59,7 +59,7 @@ Expected: JSON with `"version": "0.27.1"`. Add `.spoolman-test/` to `.gitignore`
   (c) time 500 inserts in one transaction (size of a pull);
   (d) log internal heap and PSRAM before open, after open, and after (c);
   (e) loop forever inserting one committed row per 200 ms and printing the seq.
-- [ ] **Step 3: Tell Bradley you're about to flash and reset, then flash**: `pio run -e sdtest -t upload --upload-port /dev/cu.usbserial-XXXX`. Capture serial.
+- [ ] **Step 3: Tell Bradley you're about to flash and reset, then flash**: `pio run -e sdtest -t upload --upload-port <port>`. Capture serial.
 Expected: SD mounts, integrity `ok`, numbers printed.
 - [ ] **Step 4: Power-cut test.** Ask Bradley to pull USB power during (e), three times, and to tell you before plugging back in. After each boot, (a) must print `ok`, and `max(seq)` must be ≥ the last seq printed before the cut minus 1.
 - [ ] **Step 5: Checkpoint with Bradley.** Report the numbers. Pass = integrity ok on all three cuts, single insert < 100 ms, internal heap cost < 40 kB. On failure, **stop**: the JSON-lines fallback is Bradley's call. Record the results in the spec's Constraints, and the working SD/SQLite setup in `CLAUDE.md` under Hardware Notes.

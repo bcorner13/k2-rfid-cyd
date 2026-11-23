@@ -17,3 +17,6 @@ config.json
 # Offline-inventory work: plan workspace, disposable test Spoolman
 .superpowers/
 .spoolman-test/
+
+# This install's IPs, hostnames, serial ports (repo is public). Template: docs/setup.md
+CLAUDE.local.md

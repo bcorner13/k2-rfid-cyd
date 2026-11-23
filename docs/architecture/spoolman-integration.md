@@ -46,7 +46,7 @@ POST /api/v1/spool/{id}/tag  {uid, format: "creality"}
 `GET /api/v1/spool?archived=false` gives a scrollable list (name, color swatch, remaining g, location). Tapping a spool shows details, with "Write tag for this spool" running the armed flow pre-filled from the spool's filament. Editing stays in Spoolman's web UI.
 
 ### 5. Printer remaining amount → Spoolman (phase 2)
-Measured 2026-11-09 via Moonraker (read-only GETs, printer at `192.0.2.107`). There are two sources.
+Measured 2026-11-09 via Moonraker (read-only GETs, printer address in `CLAUDE.local.md`). There are two sources.
 
 **a. `box.Tn.remain_len[]`: the CFS's own estimate.** The load sequence feeds until the extruder sensor
 triggers, and the box works out what's left from wheel travel against spool rotation. `box.cfg` macro
@@ -80,7 +80,7 @@ not yet seen) or from a manual assignment made on the device.
 ## Device changes
 
 - Config: `spoolman_url` (default `http://spoolman.lan:7912`, blank = off), set via the WiFi portal. `https://` is recognized but reports "not supported yet": it needs a TLS client and certificate handling, as a separate step, and is never silently downgraded.
-- **DNS:** this LAN's first DNS server is the Pi that hosts Spoolman (`192.0.2.97`), so `spoolman.lan` stops resolving when the Pi is down. Set an IP in the portal if that becomes a problem.
+- **DNS:** this LAN's first DNS server is the Pi that hosts Spoolman, so `spoolman.lan` stops resolving when the Pi is down. Set an IP in the portal if that becomes a problem.
 - `SpoolmanClient` (`src/spoolman_client.cpp`): HTTP runs on its own FreeRTOS task with short timeouts, because DNS can block well past the connect timeout. It talks to the main loop through single-slot queues and never touches LVGL or RFID. Parsing is in `include/spoolman_parse.h`, tested on the host with `pio test -e native`.
 - **Unverified for phase 2:** v0.27.1 logs "Trusting writes and websockets from this instance's own origin only". Confirm a device POST with no `Origin` header is accepted before building add/link.
 - Replace `InventoryManager` usage in `ui_manager.cpp` (Scan Tag, Spool Detail, Custom Entry). Remove `InventoryManager` once the replacement works.

@@ -52,8 +52,8 @@ void test_url_plain() {
 
 void test_url_trailing_slash_and_whitespace() {
     char url[URL_BUF];
-    TEST_ASSERT_EQUAL(UrlResult::Ok, buildLookupUrl("  http://192.0.2.97:7912/ ", "04A2B3C4", url, sizeof(url)));
-    TEST_ASSERT_EQUAL_STRING("http://192.0.2.97:7912/api/v1/spool?tag=04A2B3C4&allow_archived=true", url);
+    TEST_ASSERT_EQUAL(UrlResult::Ok, buildLookupUrl("  http://192.0.2.10:7912/ ", "04A2B3C4", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://192.0.2.10:7912/api/v1/spool?tag=04A2B3C4&allow_archived=true", url);
 }
 
 void test_url_scheme_is_added_when_missing() {
@@ -81,8 +81,8 @@ void test_url_too_long_fails() {
 
 void test_api_url_any_path() {
     char url[URL_BUF];
-    TEST_ASSERT_EQUAL(UrlResult::Ok, buildApiUrl(" 192.0.2.196:7912/ ", "/filament?limit=50&offset=100", url, sizeof(url)));
-    TEST_ASSERT_EQUAL_STRING("http://192.0.2.196:7912/api/v1/filament?limit=50&offset=100", url);
+    TEST_ASSERT_EQUAL(UrlResult::Ok, buildApiUrl(" 192.0.2.20:7912/ ", "/filament?limit=50&offset=100", url, sizeof(url)));
+    TEST_ASSERT_EQUAL_STRING("http://192.0.2.20:7912/api/v1/filament?limit=50&offset=100", url);
     TEST_ASSERT_EQUAL(UrlResult::Disabled, buildApiUrl("  ", "/spool", url, sizeof(url)));
     TEST_ASSERT_EQUAL(UrlResult::HttpsUnsupported, buildApiUrl("https://x", "/spool", url, sizeof(url)));
     char small[20];

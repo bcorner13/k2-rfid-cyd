@@ -23,13 +23,15 @@ pio test -e native               # Host unit tests for pure logic (Spoolman pars
 
 Build requires C++17. Full builds may take 2+ minutes due to linking. The board has two USB-C ports — use the **UART** port for upload/monitor.
 
-## Environment / access (verified 2026-11-02)
+## Environment / access
 
-- **Spoolman:** `http://spoolman.lan:7912/api/v1/` (resolves to `192.0.2.97`, the Home Assistant Pi). v0.27.1 as of 2026-11-05, SQLite, no auth, plain HTTP on its own port. SpoolmanDB external catalog is reachable (`GET /external/filament`, ~9.4k entries). **The Pi is also the first DNS server on this LAN:** when it is down or rebooting, `.lan` names like `spoolman.lan` stop resolving, and the router returned nothing for that name, so test by IP before concluding anything else is wrong.
-- **K2 Plus:** printer hostname `K2Plus-XXXX`, Wi-Fi only (Ethernet never used), MAC `XX:XX:XX:XX:XX:XX`. DNS name **`printer.lan`** → `192.0.2.106` via a router DHCP reservation (set 2026-11-02). The old reservation had a MAC (`XX:XX:XX:XX:XX:XX`) that no longer exists on the LAN, so for a while the printer got `.107` from the pool. **Pending:** the printer only moves to `.106` after it reconnects (reboot after the current print); until then it's still at `.107`. **Still `.107` on 2026-11-09**, and `printer.lan` did not resolve from this Mac that day. If it's ever unreachable, scan: `nc -z -G1 192.0.2.$i 7125`.
+**This repo is public. Never commit IPs, hostnames, MAC addresses, serial-port paths or login details.** This install's specifics live in **`CLAUDE.local.md`** (gitignored, loaded automatically). Read it before touching the printer, Spoolman or the board. Setup steps for a new install, plus a template for that file: **`docs/setup.md`**.
+
+- **Spoolman:** tested against v0.27.1, SQLite, no auth, plain HTTP on `:7912`. The SpoolmanDB external catalog is at `GET /external/filament` (~9.4k entries). If the Spoolman host is also the LAN's DNS server, `.lan` names stop resolving while it is down: test by IP before concluding anything else is wrong.
+- **K2 Plus:** Wi-Fi. Use a router DHCP reservation, which only takes effect after the printer reconnects. If it's unreachable, scan the subnet for port 7125 (`docs/setup.md`).
   - **Moonraker** on `:7125`, no auth. `GET /printer/objects/query?box&filament_rack&print_stats` returns the CFS state per box `T1..T4` (`material_type[]`, `color_value[]`, `vender[]`, `remain_len[]`, `sn`, `uuid`) and the external rack (`filament_rack.vender` = the raw 40-char tag payload string). Read-only queries are safe during a print; don't send gcode while `print_stats.state == printing`.
   - `box.Tn.measuring_wheel` = per-box filament odometer (~mm, negative = feed). Moonraker file API (read-only GET) serves `config/box.cfg` and `logs/klippy.log*`. The daily logs are ~115 MB, so stream them through `grep`.
-  - Creality web UI on `:4408`. **SSH** on `:22`, (login details: CLAUDE.local.md).
+  - Creality web UI on `:4408`. SSH on `:22` (login details: `CLAUDE.local.md`).
 
 ## Architecture
 
@@ -126,8 +128,8 @@ JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
 - **RTC:** PCF8563 onboard — use for timestamps, no NTP dependency.
 - **SD card:** SPI on GPIO11 (MOSI) / GPIO12 (SCK) / GPIO13 (MISO), CS = GPIO10. Board ships with 32GB MicroSD.
   - **SQLite on SD works** (`siara-cc/Sqlite3Esp32 @ 2.5.0`, measured 2026-11-09, `pio run -e sdtest` sketch in `test/sd_sqlite/`): `SPIClass(FSPI)` on those pins, `SD.begin(10, spi, 20000000, "/sd")`, open `/sd/<file>.db`. Use `page_size=4096` + `cache_size=-256` (the library defaults to a 1 KB cache, and bulk writes crawl), `journal_mode=TRUNCATE` (no WAL), `synchronous=FULL`. `PRAGMA integrity_check` is compiled out of the library. Survived 3/3 USB power cuts with no lost rows.
-  - **Parser stack is 20 deep** (`YYSTACKDEPTH 20` in the library's `config_ext.h`, SQLite default 100). An `INSERT … SELECT` with a join and several `coalesce()` failed on the board with "parser stack overflow" but passed on the Mac. Keep statements flat, and run `pio test -e boardtest --upload-port /dev/cu.usbserial-XXXX --test-port /dev/cu.usbserial-XXXX` after any SQL change: it runs `test_local_store` on the board itself.
-  - **Serial console** (main firmware, 115200): `url` prints the Spoolman URL, `url <value>` sets and saves it (same as the portal field), `printer` / `printer <ip>` does the same for the printer address used by Update DB, `sync` syncs now, `state` prints the sync state. `docker pause spoolman-test` reproduces a hung Spoolman (TCP accepts, no HTTP), like the Pi on 2026-11-09.
+  - **Parser stack is 20 deep** (`YYSTACKDEPTH 20` in the library's `config_ext.h`, SQLite default 100). An `INSERT … SELECT` with a join and several `coalesce()` failed on the board with "parser stack overflow" but passed on the Mac. Keep statements flat, and run `pio test -e boardtest --upload-port <port> --test-port <port>` after any SQL change (port: `pio device list`, or `CLAUDE.local.md`): it runs `test_local_store` on the board itself.
+  - **Serial console** (main firmware, 115200): `url` prints the Spoolman URL, `url <value>` sets and saves it (same as the portal field), `printer` / `printer <ip>` does the same for the printer address used by Update DB, `sync` syncs now, `state` prints the sync state. `docker pause spoolman-test` reproduces a hung Spoolman (TCP accepts, no HTTP), like the real Spoolman host did on 2026-11-09.
 - **Display:** ESP32-S3 native RGB peripheral → LCD module QT4300H40R10-V03 (panel IC: HX8664/HX8264). Driven in **16-bit RGB565** mode. Pin map: DE=40, VSYNC=41, HSYNC=39, PCLK=42; R0-R4=45,48,47,21,14; G0-G5=5,6,7,15,16,4; B0-B4=8,3,46,9,1. Clock: 16 MHz. Note: "ST7262" label in older docs was incorrect — no such controller chip on this board.
 - **PSRAM:** 8MB OPI (`board_build.arduino.memory_type = qio_opi`)
 - **Flash:** 16MB
