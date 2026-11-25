@@ -128,15 +128,17 @@ bool FilamentDB::loadDatabase() {
         for (JsonVariant c : colors) {
             const char* s = c.as<const char*>();
             if (!s || s[0] != '#') continue;
-            const uint32_t rgb = strtoul(s + 1, nullptr, 16);
+            const uint32_t rgb = ::dbHexToRgb(s);   // "#RRGGBBAA" (clear/translucent) -> RGB
             profile.colors.push_back(rgb);
-            profile.color_names.push_back(String(::productColorName(mix, rgb).c_str()));
+            std::string cname = ::productColorNameForHex(mix, s);
+            if (cname.empty()) cname = ::productColorName(mix, rgb);
+            profile.color_names.push_back(String(cname.c_str()));
+            profile.color_alphas.push_back(::dbHexAlpha(s));
         }
         if (!colors.isNull() && colors.size() > 0) {
             profile.color_name = colors[0].as<String>();
             if (profile.color_name.startsWith("#")) {
-                profile.color_hex =
-                    strtol(profile.color_name.substring(1).c_str(), nullptr, 16);
+                profile.color_hex = ::dbHexToRgb(profile.color_name.c_str());
             } else {
                 profile.color_hex = 0xFFFFFF;
             }
@@ -227,9 +229,17 @@ String FilamentDB::getProductOptionsForDropdown(const String& brand, const Strin
 String FilamentDB::productColorName(const String& id, uint32_t rgb) const {
     for (const auto& p : cache) {
         if (p.id != id) continue;
-        for (size_t i = 0; i < p.colors.size() && i < p.color_names.size(); i++)
-            if (p.colors[i] == rgb) return p.color_names[i];
-        return "";
+        // A tag holds RGB only. When an opaque and a clear/translucent colour share it
+        // (CR-PETG Blue #2125AB / Transparent Blue #2125AB80), name it as the opaque one.
+        String fallback;
+        bool haveFallback = false;
+        for (size_t i = 0; i < p.colors.size() && i < p.color_names.size(); i++) {
+            if (p.colors[i] != rgb) continue;
+            const bool opaque = i >= p.color_alphas.size() || p.color_alphas[i] == 0xFF;
+            if (opaque) return p.color_names[i];
+            if (!haveFallback) { fallback = p.color_names[i]; haveFallback = true; }
+        }
+        return fallback;
     }
     return "";
 }

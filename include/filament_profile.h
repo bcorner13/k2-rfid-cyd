@@ -20,6 +20,7 @@ struct FilamentProfile {
     String color_name; // e.g., #FFFFFF
     std::vector<uint32_t> colors; // every color the DB lists for this product (colors[0] == color_hex)
     std::vector<String> color_names; // parallel to colors: DB English name, "" if none
+    std::vector<uint8_t> color_alphas; // parallel to colors: 0xFF opaque, 0x80 translucent, 0x00 clear
     uint16_t nozzle_temp;
     uint16_t bed_temp;
     uint32_t weight_g = 1000; // Default for new spools

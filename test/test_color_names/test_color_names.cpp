@@ -53,6 +53,52 @@ void test_product_name_missing_or_blank_is_empty() {
     TEST_ASSERT_EQUAL_STRING("", productColorName(JsonArrayConst(), 0x000000).c_str());         // no list
 }
 
+// 8-digit #RRGGBBAA entries, from 06001 CR-PETG (alpha 00 = clear, 80 = translucent).
+static const char* MIX_ALPHA = R"([
+  {"colorEn":"White","hexValue":"#FFFFFF"},
+  {"colorEn":"Transparent","hexValue":"#FFFFFF00"},
+  {"colorEn":"Blue","hexValue":"#2125AB"},
+  {"colorEn":"Transparent Blue","hexValue":"#2125AB80"},
+  {"colorEn":"Transparent Green","hexValue":"#00B14080"}
+])";
+
+void test_db_hex_drops_alpha() {
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFF, dbHexToRgb("#FFFFFF00"));   // was 0xFFFFFF00 -> shown as #FFFF00
+    TEST_ASSERT_EQUAL_HEX32(0xB8D4B7, dbHexToRgb("#B8D4B780"));
+    TEST_ASSERT_EQUAL_HEX32(0x212721, dbHexToRgb("#212721"));
+    TEST_ASSERT_EQUAL_HEX32(0xA1B2C3, dbHexToRgb("a1b2c3"));
+}
+
+void test_db_hex_alpha() {
+    TEST_ASSERT_EQUAL_UINT8(0x00, dbHexAlpha("#FFFFFF00"));
+    TEST_ASSERT_EQUAL_UINT8(0x80, dbHexAlpha("#2125AB80"));
+    TEST_ASSERT_EQUAL_UINT8(0xFF, dbHexAlpha("#2125AB"));   // 6 digits = opaque
+}
+
+void test_product_name_translucent_found_by_rgb() {
+    JsonDocument d;
+    deserializeJson(d, MIX_ALPHA);
+    TEST_ASSERT_EQUAL_STRING("Transparent Green", productColorName(d.as<JsonArrayConst>(), 0x00B140).c_str());
+}
+
+void test_product_name_same_rgb_prefers_opaque() {
+    // The tag holds RGB only, so FFFFFF can't say White vs Transparent; the opaque name wins.
+    JsonDocument d;
+    deserializeJson(d, MIX_ALPHA);
+    TEST_ASSERT_EQUAL_STRING("White", productColorName(d.as<JsonArrayConst>(), 0xFFFFFF).c_str());
+    TEST_ASSERT_EQUAL_STRING("Blue", productColorName(d.as<JsonArrayConst>(), 0x2125AB).c_str());
+}
+
+void test_product_name_by_exact_db_hex() {
+    // Building the picker we know which entry it is, so the clear one keeps its own name.
+    JsonDocument d;
+    deserializeJson(d, MIX_ALPHA);
+    JsonArrayConst m = d.as<JsonArrayConst>();
+    TEST_ASSERT_EQUAL_STRING("Transparent", productColorNameForHex(m, "#FFFFFF00").c_str());
+    TEST_ASSERT_EQUAL_STRING("Transparent Blue", productColorNameForHex(m, "#2125ab80").c_str());
+    TEST_ASSERT_EQUAL_STRING("White", productColorNameForHex(m, "#FFFFFF").c_str());
+}
+
 void test_label_uses_product_name() {
     char buf[48];
     formatColorLabel("Dark Green", 0x212721, buf, sizeof(buf));
@@ -74,6 +120,11 @@ int main() {
     RUN_TEST(test_product_name_found_by_hex);
     RUN_TEST(test_product_name_hex_case_insensitive);
     RUN_TEST(test_product_name_missing_or_blank_is_empty);
+    RUN_TEST(test_db_hex_drops_alpha);
+    RUN_TEST(test_db_hex_alpha);
+    RUN_TEST(test_product_name_translucent_found_by_rgb);
+    RUN_TEST(test_product_name_same_rgb_prefers_opaque);
+    RUN_TEST(test_product_name_by_exact_db_hex);
     RUN_TEST(test_label_uses_product_name);
     RUN_TEST(test_label_falls_back_to_nearest);
     return UNITY_END();

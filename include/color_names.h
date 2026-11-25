@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <cctype>
 #include <string>
 #include <ArduinoJson.h>
 
@@ -44,15 +46,55 @@ inline const char* nearestColorName(uint32_t rgb, bool* exact = nullptr) {
     return best;
 }
 
-/// The DB's English name for one of a product's colours, or "" if it has none.
+/// RGB of a DB colour string. The DB uses "#RRGGBB", and "#RRGGBBAA" for clear (AA=00) and
+/// translucent (AA=80) filaments; the tag and the UI are RGB only, so the alpha byte is dropped.
+inline uint32_t dbHexToRgb(const char* s) {
+    if (!s) return 0;
+    if (s[0] == '#') s++;
+    char buf[7] = {0};
+    for (int i = 0; i < 6 && s[i]; i++) buf[i] = s[i];
+    return (uint32_t)strtoul(buf, nullptr, 16);
+}
+
+/// Alpha of a DB colour string: the AA of "#RRGGBBAA", or 0xFF for "#RRGGBB".
+inline uint8_t dbHexAlpha(const char* s) {
+    if (!s) return 0xFF;
+    if (s[0] == '#') s++;
+    if (std::strlen(s) < 8) return 0xFF;
+    char buf[3] = {s[6], s[7], 0};
+    return (uint8_t)strtoul(buf, nullptr, 16);
+}
+
+/// The DB's English name for one of a product's colours, or "" if it has none. When an opaque and
+/// a clear entry share the RGB (CR-PETG White #FFFFFF / Transparent #FFFFFF00), the opaque one wins:
+/// a tag can't tell them apart.
 inline std::string productColorName(JsonArrayConst mix, uint32_t rgb) {
     if (mix.isNull()) return "";
+    std::string translucent;
+    bool haveTranslucent = false;
     for (JsonObjectConst m : mix) {
         const char* hex = m["hexValue"] | "";
-        if (hex[0] == '#') hex++;
-        if (!hex[0] || (uint32_t)strtoul(hex, nullptr, 16) != rgb) continue;
+        if (!hex[0] || dbHexToRgb(hex) != rgb) continue;
         const char* name = m["colorEn"] | "";
-        return name;
+        if (dbHexAlpha(hex) == 0xFF) return name;
+        if (!haveTranslucent) { translucent = name; haveTranslucent = true; }
+    }
+    return translucent;
+}
+
+/// The DB's English name for the entry whose hexValue is exactly `hex` (case-insensitive, alpha
+/// included), or "" if none. Used when the DB colour string itself is known.
+inline std::string productColorNameForHex(JsonArrayConst mix, const char* hex) {
+    if (mix.isNull() || !hex) return "";
+    if (hex[0] == '#') hex++;
+    for (JsonObjectConst m : mix) {
+        const char* h = m["hexValue"] | "";
+        if (h[0] == '#') h++;
+        if (!h[0] || std::strlen(h) != std::strlen(hex)) continue;
+        bool same = true;
+        for (size_t i = 0; h[i]; i++)
+            if (std::toupper((unsigned char)h[i]) != std::toupper((unsigned char)hex[i])) { same = false; break; }
+        if (same) return m["colorEn"] | "";
     }
     return "";
 }
