@@ -238,7 +238,7 @@ void rfid_task() {
 }
 
 // Serial console for bench testing: "url" prints the Spoolman URL, "url <value>" sets and saves it
-// (same as the Wi-Fi portal field), "sync" starts a sync now.
+// (same as the Wi-Fi portal field), "sync" starts a sync now, "colors <id>" lists a profile's colours.
 static void serial_console() {
     static char line[160];
     static size_t len = 0;
@@ -273,11 +273,22 @@ static void serial_console() {
                           (int)spoolmanSync.state(), (long long)spoolmanSync.lastPullEpoch(),
                           (int)sdStorage.available(), sdStorage.failure(), t ? (int)eTaskGetState(t) : -1,
                           t ? (unsigned)uxTaskGetStackHighWaterMark(t) : 0);
+        } else if (strncmp(line, "colors ", 7) == 0) {   // read-only: a profile's parsed colours
+            FilamentProfile p;
+            if (!filamentDB.getProfileById(String(line + 7), p)) {
+                Serial.printf("CONSOLE: no profile '%s'\n", line + 7);
+            } else {
+                Serial.printf("CONSOLE: %s %s: %u colours\n", p.id.c_str(), p.name.c_str(), (unsigned)p.colors.size());
+                for (size_t i = 0; i < p.colors.size(); i++)
+                    Serial.printf("CONSOLE:   #%06X a=%02X \"%s\"\n", (unsigned)p.colors[i],
+                                  i < p.color_alphas.size() ? p.color_alphas[i] : 0xFF,
+                                  i < p.color_names.size() ? p.color_names[i].c_str() : "");
+            }
         } else if (strcmp(line, "sync") == 0) {
             spoolmanSync.kick();
             Serial.println("CONSOLE: sync started");
         } else {
-            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | sync | state)\n", line);
+            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | colors <id> | sync | state)\n", line);
         }
     }
 }
