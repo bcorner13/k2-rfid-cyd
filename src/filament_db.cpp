@@ -6,8 +6,21 @@
 #include <StreamUtils.h>   // Include StreamUtils library
 #include <psram_allocator.h>
 #include <color_names.h>
+#include <SD.h>
+#include <material_db_store.h>
+#include <sd_storage.h>
 
 FilamentDB filamentDB;
+
+MaterialDbLocation materialDbReadLocation() {
+    if (sdStorage.mounted() && SD.exists(MATERIAL_DB_PATH)) return {&SD, "SD"};
+    return {&LittleFS, "LittleFS"};
+}
+
+MaterialDbLocation materialDbWriteLocation() {
+    if (sdStorage.mounted()) return {&SD, "SD"};
+    return {&LittleFS, "LittleFS"};
+}
 
 FilamentDB::FilamentDB() = default;
 
@@ -34,11 +47,13 @@ bool FilamentDB::init() {
 bool FilamentDB::loadDatabase() {
     Serial.println("\nFilamentDB::loadDatabase() called.");
 
-    File file = LittleFS.open("/material_database.json", "r");
+    const MaterialDbLocation loc = materialDbReadLocation();
+    File file = loc.fs->open(MATERIAL_DB_PATH, "r");
     if (!file) {
-        Serial.println("ERROR: Failed to open material_database.json!");
+        Serial.printf("ERROR: Failed to open material_database.json on %s!\n", loc.name);
         return false;
     }
+    Serial.printf("Material DB: %s%s\n", loc.name, MATERIAL_DB_PATH);
 
     Serial.printf("JSON file size: %u bytes\n", file.size());
     Serial.printf("Free heap (internal): %u bytes\n", ESP.getFreeHeap());

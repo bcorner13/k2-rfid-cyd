@@ -13,7 +13,10 @@
 
 class SdStorage {
 public:
-    bool begin();                       // mounts SD (SPI 11/12/13, CS 10) and opens /sd/k2rfid.db
+    bool mount();                       // mounts the card only (SPI 11/12/13, CS 10); idempotent.
+                                        // Called before FilamentDB loads, which reads the material DB from it.
+    bool mounted() const { return mounted_; }
+    bool begin();                       // mount() + opens /sd/k2rfid.db
     bool available() const { return available_; }
     void markFailed(const char* why);   // a store call failed on the board: offline mode off until reboot
     const char* failure() const { return failure_; }
@@ -25,6 +28,8 @@ private:
     LocalStore store_;
     SemaphoreHandle_t mutex_ = nullptr;
     volatile bool available_ = false;
+    bool mounted_ = false;
+    bool mountTried_ = false;
     char failure_[48] = "not started";
 };
 

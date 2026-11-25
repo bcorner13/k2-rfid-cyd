@@ -11,19 +11,29 @@ SPIClass sdSpi(FSPI);
 constexpr const char* DB_PATH = "/sd/k2rfid.db";
 }  // namespace
 
+bool SdStorage::mount() {
+    if (mountTried_) return mounted_;
+    mountTried_ = true;
+    sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+    mounted_ = SD.begin(PIN_SD_CS, sdSpi, 20000000, "/sd");
+    if (mounted_)
+        Serial.printf("SD: %llu MB card, %llu KB used\n", SD.cardSize() / (1024 * 1024), SD.usedBytes() / 1024);
+    else
+        Serial.println("SD: no card");
+    return mounted_;
+}
+
 bool SdStorage::begin() {
     mutex_ = xSemaphoreCreateMutex();
     if (!mutex_) {
         markFailed("no mutex");
         return false;
     }
-    sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-    if (!SD.begin(PIN_SD_CS, sdSpi, 20000000, "/sd")) {
+    if (!mount()) {
         markFailed("no card");
         Serial.println("SD: no card - offline mode unavailable");
         return false;
     }
-    Serial.printf("SD: %llu MB card, %llu KB used\n", SD.cardSize() / (1024 * 1024), SD.usedBytes() / 1024);
 
     const uint32_t t0 = millis();
     if (!store_.open(DB_PATH)) {

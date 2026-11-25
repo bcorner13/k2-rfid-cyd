@@ -83,6 +83,7 @@ void setup() {
 
     // For now, let's assume Bluetooth is available if the code compiles
     splash_update_status(2, "Available", true);
+    sdStorage.mount();      // before the DB load: the material DB is read from the card if it has one
     bool db_ok = filamentDB.init();
     Serial.printf("Mem[filamentDB]: heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     splash_update_status(3, db_ok ? "Loaded" : "Failed", db_ok);

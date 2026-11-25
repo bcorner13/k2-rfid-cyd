@@ -10,6 +10,8 @@
 #include <material_db_merge.h>
 #include <bundled_colors.h>
 #include <esp_task_wdt.h>
+#include <material_db_store.h>
+#include <StreamUtils.h>
 
 AppNetwork network;
 
@@ -263,7 +265,9 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
                          .substring(0, 16);
 
     // FSD 5.6 step 6: Compare hash
-    if (newHash == config.data.db_hash && !config.data.db_hash.isEmpty()) {
+    // Not up to date if the DB still has to move to the SD card (card fitted, no copy on it yet).
+    const bool inPlace = materialDbReadLocation().fs == materialDbWriteLocation().fs;
+    if (inPlace && newHash == config.data.db_hash && !config.data.db_hash.isEmpty()) {
         free(dbBuf);
         result.success = true;
         result.skipped = true;
@@ -291,7 +295,9 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
 
     JsonDocument current(psramJsonAllocator());
     {
-        File cur = LittleFS.open("/material_database.json", "r");
+        const MaterialDbLocation src = materialDbReadLocation();
+        Serial.printf("DB update: merging into %s copy\n", src.name);
+        File cur = src.fs->open(MATERIAL_DB_PATH, "r");
         if (cur) {
             DeserializationError cerr = deserializeJson(current, cur);
             cur.close();
@@ -317,31 +323,36 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
                   st.added, st.keptLocalOnly, st.bundledColoursAdded, profileCount,
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
-    // Write to temp file for atomic replace
-    File file = LittleFS.open("/material_database.json.tmp", "w");
+    // Write to a temp file, then replace. SD card when mounted (doesn't stall the RGB panel).
+    const MaterialDbLocation dst = materialDbWriteLocation();
+    File file = dst.fs->open(MATERIAL_DB_TMP_PATH, "w");
     if (!file) {
-        result.message = "Storage error: cannot create temp file";
+        result.message = String("Storage error: cannot create temp file on ") + dst.name;
         _lastError = result.message;
         return result;
     }
-    Serial.printf("DB update: merged, writing (%lu ms)\n", (unsigned long)(millis() - tStart));
-    const size_t written = serializeJson(incoming, file);
-    file.flush();
+    Serial.printf("DB update: merged, writing to %s (%lu ms)\n", dst.name, (unsigned long)(millis() - tStart));
+    size_t written = 0;
+    {
+        WriteBufferingStream buffered(file, 4096);   // serializeJson writes in tiny pieces
+        written = serializeJson(incoming, buffered);
+        buffered.flush();
+    }
+    const size_t onDisk = file.size();
     file.close();
     incoming.clear();
-    if (written == 0) {
-        LittleFS.remove("/material_database.json.tmp");
-        result.message = "Storage error: could not write merged DB";
+    if (written == 0 || onDisk != written) {
+        dst.fs->remove(MATERIAL_DB_TMP_PATH);
+        result.message = String("Storage error: could not write merged DB to ") + dst.name;
         _lastError = result.message;
+        Serial.printf("DB update: wrote %u of %u bytes on %s\n", (unsigned)onDisk, (unsigned)written, dst.name);
         return result;
     }
 
-    // Atomic replace
-    if (LittleFS.exists("/material_database.json")) {
-        LittleFS.remove("/material_database.json");
-    }
-    if (!LittleFS.rename("/material_database.json.tmp", "/material_database.json")) {
-        result.message = "Storage error: rename failed";
+    // Replace (FAT and LittleFS rename don't overwrite)
+    if (dst.fs->exists(MATERIAL_DB_PATH)) dst.fs->remove(MATERIAL_DB_PATH);
+    if (!dst.fs->rename(MATERIAL_DB_TMP_PATH, MATERIAL_DB_PATH)) {
+        result.message = String("Storage error: rename failed on ") + dst.name;
         _lastError = result.message;
         return result;
     }
