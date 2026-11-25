@@ -29,6 +29,8 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("--- Booting ---");
+    Serial.printf("Reset reason: %d (1 power-on, 3 software, 4 panic, 5 int-wdt, 6 task-wdt, 7 wdt, 9 brownout)\n",
+                  (int)esp_reset_reason());
     Serial.printf("Mem[boot]:    heap=%u  psram=%u  minHeap=%u\n",
                   ESP.getFreeHeap(), ESP.getFreePsram(), ESP.getMinFreeHeap());
 

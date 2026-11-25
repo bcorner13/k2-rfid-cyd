@@ -10,7 +10,7 @@ struct AppConfig {
     String spoolman_url = "http://spoolman.lan:7912";  // Empty = Spoolman lookups disabled
 
     // P1.10: Database update metadata (FSD Section 5.6)
-    String db_hash;                 // SHA-256 hex of last downloaded DB
+    String db_hash;                 // SHA-256 hex of last downloaded DB + "+" + 16 hex of bundled colours
     uint32_t db_updated_at = 0;     // Uptime seconds when last updated
     uint16_t db_profile_count = 0;  // Number of profiles in last DB
     uint8_t db_schema_version = 0;  // 1 = known format, 0 = unknown/never updated
