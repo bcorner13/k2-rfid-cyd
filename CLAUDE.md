@@ -113,7 +113,7 @@ JSON with `beep_enabled`, WiFi SSID. Managed by `ConfigManager`.
 
 > **Board in use: V3.1** (confirmed from PCB front silkscreen, 2026-03-10). Version number is printed near the Makerfabs logo. V3.1 adds an onboard SPK connector for a small speaker. GPIO pin assignments for I2C, GPIO, and display are the same as V1.3/V2.0. Audio/backlight behaviour for V3.1 TBD — treat as V2.0 (`-DBOARD_MATOUCH_V2`) until confirmed.
 
-- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch, PCF8563 RTC, Mabee I2C port, and PN532. No address conflicts: GT911=0x5D, PCF8563=0x51, PN532=0x24, MAX17048 fuel gauge=0x36 (optional; chained between the port and the PN532).
+- **I2C bus:** GPIO17 (SDA) / GPIO18 (SCL) — shared between GT911 touch, PCF8563 RTC, Mabee I2C port, and PN532. No address conflicts: GT911=0x5D, PCF8563=0x51, PN532=0x24, MAX17048 fuel gauge=0x36 (optional). Wired as a Y harness off the Mabee I2C port: one leg to the PN532, a Qwiic leg to the gauge, all in parallel (Grove white = Qwiic blue = SDA). The second Mabee port is GPIO, not I2C.
 - **Mabee I2C port** (HY2.0-4P, Grove-compatible) — pinout confirmed from V3.1 PCB silkscreen:
   - Pin 1 (bottom): GND
   - Pin 2: +3V3
