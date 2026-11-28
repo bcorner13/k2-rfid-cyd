@@ -286,9 +286,10 @@ void UIManager::event_handler(lv_event_t* e) {
         if (obj == ui.screenSpoolDetail.btnBack) { ui.showInventoryScreen(); return; }
         if (obj == ui.screenCustomEntry.btnCancel) { ui.showInventoryScreen(); return; }
         if (obj == ui.screenWifi.btnBack) {
-            // Re-enable watchdog when leaving setup
+            // Leaving setup: shut the access point down, then re-enable the watchdog
+            network.stopConfigPortal();
             esp_task_wdt_add(NULL);
-            
+
             sysState.handleEvent(SystemEvent::USER_DISMISS);
             ui.showSettingsScreen();
             return;

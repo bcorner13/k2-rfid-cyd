@@ -341,8 +341,10 @@ void loop() {
     }
 
     // If we are in WiFi Config state and just connected, wrap up and return to settings
-    if (sysState.getCurrentState() == SystemState::WIFI_CONFIG && network.isConnected()) {
+    // (Not just "connected": at home it already is, which used to bounce Setup WiFi shut at once.)
+    if (sysState.getCurrentState() == SystemState::WIFI_CONFIG && network.portalDone()) {
         Serial.println("WiFi Connected! Exiting config portal...");
+        network.stopConfigPortal();   // no-op if WiFiManager already closed it
         esp_task_wdt_add(NULL); // Re-enable watchdog
         sysState.handleEvent(SystemEvent::OPERATION_SUCCESS);
         ui.updateButtonStates(); // 🟢 Un-ghost the buttons

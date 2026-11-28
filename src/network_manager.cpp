@@ -20,6 +20,7 @@ AppNetwork::AppNetwork() {}
 void AppNetwork::init() {
     wm.setDebugOutput(true);
     wm.setConfigPortalBlocking(false);  // Non-blocking portal!
+    wm.setSaveConfigCallback([this]() { portalSavedWifi = true; });   // new network credentials
 
     // Set callback to save custom params
     wm.setSaveParamsCallback([this]() {
@@ -71,7 +72,22 @@ void AppNetwork::startConfigPortal() {
     }
 
     wm.setTitle("K2 RFID Tool Setup");
+    portalStartedConnected = isConnected();
+    portalSavedWifi = false;
     wm.startConfigPortal("K2-RFID-SETUP");
+}
+
+bool AppNetwork::portalDone() {
+    return isConnected() && (portalSavedWifi || !portalStartedConnected);
+}
+
+void AppNetwork::stopConfigPortal() {
+    // Non-blocking portal: leaving the WiFi screen without connecting left the K2-RFID-SETUP
+    // access point broadcasting until a restart.
+    if (wm.getConfigPortalActive()) {
+        wm.stopConfigPortal();
+        Serial.println("WiFi: setup portal stopped");
+    }
 }
 
 void AppNetwork::reset() {
@@ -167,28 +183,22 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
     DBUpdateResult result = {false, false, 0, ""};
     _lastError = "";
 
+    // Fail fast with no WiFi. This used to call connect() and wait up to 20 s, freezing the UI
+    // (the wait runs on the loop task). Auto-reconnect already retries the saved network in the
+    // background, so waiting here added nothing.
     if (!isConnected()) {
-        if (!connect()) {
-            result.message = "WiFi not connected";
-            _lastError = result.message;
-            return result;
-        }
-        int timeout = 40;
-        while (WiFi.status() != WL_CONNECTED && timeout > 0) {
-            delay(500);
-            timeout--;
-        }
-        if (WiFi.status() != WL_CONNECTED) {
-            result.message = "WiFi connection timed out";
-            _lastError = result.message;
-            return result;
-        }
+        result.message = "No WiFi: connect to the printer's network first";
+        _lastError = result.message;
+        return result;
     }
 
     // FSD Section 5.6 step 4: Download
     String url = buildDBURL(config.data.printer_ip, config.data.printer_model);
     Serial.println("Updating from: " + url);
 
+    // Printer unreachable (e.g. on another network) = give up in 2 s, not the 5 s default.
+    // Read timeout stays generous: the ~430 KB download is slow but steady.
+    http.setConnectTimeout(DB_CONNECT_TIMEOUT_MS);
     http.begin(url);
     int httpCode = http.GET();
 

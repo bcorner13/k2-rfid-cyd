@@ -5,6 +5,7 @@
 
 // Hard limit per FSD Section 14.2
 static constexpr size_t DB_MAX_SIZE_BYTES = 512 * 1024;  // 512 KB
+static constexpr int32_t DB_CONNECT_TIMEOUT_MS = 2000;     // printer TCP connect, Update DB
 
 // P1.10: Update result with details for UI display
 struct DBUpdateResult {
@@ -21,6 +22,10 @@ public:
     void process();
     bool connect();
     void startConfigPortal();
+    void stopConfigPortal();   // no-op when the portal isn't running
+    /** Setup WiFi is finished: the portal saved a network and we're on it, or we were offline
+     *  when it opened and are now connected. Being connected already at open doesn't count. */
+    bool portalDone();
     void reset();
     bool isConnected();
 
@@ -38,6 +43,8 @@ private:
     WiFiManagerParameter* custom_printer_ip{nullptr};
     WiFiManagerParameter* custom_spoolman_url{nullptr};
     String _lastError;
+    bool portalStartedConnected = false;   // already on WiFi when Setup WiFi opened
+    bool portalSavedWifi = false;          // portal saved new network credentials
 
     // P1.10: SHA-256 hash of data buffer, returned as 64-char hex string
     static String computeSHA256(const uint8_t* data, size_t length);
