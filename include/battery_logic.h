@@ -9,6 +9,7 @@
  */
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 
 namespace battery {
@@ -79,6 +80,31 @@ inline void formatBatteryText(const Status& s, char* out, size_t n) {
     if (!s.present) { if (n) out[0] = '\0'; return; }
     if (s.charge == ChargeState::Full) { std::snprintf(out, n, "Full"); return; }
     std::snprintf(out, n, "%d%%%s", (int)std::lround(s.percent), s.charge == ChargeState::Charging ? "+" : "");
+}
+
+constexpr uint32_t COLOR_GREEN = 0x00C853;
+constexpr uint32_t COLOR_AMBER = 0xFFB300;
+constexpr uint32_t COLOR_RED   = 0xFF5252;
+constexpr uint32_t COLOR_GHOST = 0x808080;
+
+/** How the status-bar battery icon is drawn. `ghost` = faded outline (no gauge, or 0 %). */
+struct IconStyle {
+    int bars;         // batteryBars()
+    uint32_t color;   // RGB
+    bool ghost;
+};
+
+/**
+ * Ghosted empty battery with no gauge or at 0 % (as displayed, rounded); otherwise the fill
+ * level in green, amber when Low and red when Critical. Charging or Full stays green.
+ */
+inline IconStyle iconStyle(const Status& s) {
+    if (!s.present || std::lround(s.percent) <= 0) return IconStyle{0, COLOR_GHOST, true};
+    uint32_t color = COLOR_GREEN;
+    const bool charging = s.charge == ChargeState::Charging || s.charge == ChargeState::Full;
+    if (!charging && s.level == Level::Critical) color = COLOR_RED;
+    else if (!charging && s.level == Level::Low) color = COLOR_AMBER;
+    return IconStyle{batteryBars(s.percent), color, false};
 }
 
 }  // namespace battery

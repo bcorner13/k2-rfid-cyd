@@ -35,7 +35,7 @@ void BatteryGauge::init() {
         Serial.printf("Battery gauge: MAX17048 found, %.2fV %.1f%% %.1f%%/hr\n",
                       status_.voltage, status_.percent, status_.rateHr);
     } else {
-        Serial.println("Battery gauge: not found (0x36), battery UI hidden");
+        Serial.println("Battery gauge: not found (0x36), battery icon ghosted");
     }
     lastPollMs_ = millis();
 }

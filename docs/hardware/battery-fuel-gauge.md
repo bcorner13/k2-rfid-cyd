@@ -13,23 +13,33 @@ The MaTouch V3.1 charges the 1S 3.7 V LiPo on-board but exposes no state of char
 | Newfame MAX17048 breakout (clone of Adafruit #5580 layout) | Fuel gauge: 2× JST-PH battery pass-through, 2× Qwiic/STEMMA QT, pins VIN/GND/SCL/SDA/INT/QSTRT |
 | SparkFun Qwiic ↔ Grove adapter, 100 mm | Board Mabee I2C port → gauge |
 | Hiteuoms Qwiic kit (includes 2× Qwiic → female Dupont, 15 cm) | Gauge → PN532 4-pin header |
+| **JST-PH 2.0 2-pin plug leads ×2** (or a plug-to-plug cable), plus the power switch | Gauge BAT B → MaTouch battery socket. **Not ordered with the first batch.** The battery's own plug is PH 2.0 (clicks into the gauge, 2026-11-27). |
 
 On arrival, check the chip marking reads **17048**, not 17043. The 17043 has no CRATE register, so it can't report a charge rate.
 
 ## Wiring
 
+As built 2026-11-27: I2C is a hand-made Y harness, not the daisy chain originally planned (the SparkFun cable and Qwiic→Dupont leads went unused). The MaTouch has 1 Mabee I2C + 1 Mabee GPIO port (Makerfabs spec), so the second socket is GPIO and can't take the gauge.
+
 ```
-Battery ──JST-PH──▶ gauge BAT A
-                    gauge BAT B ──[power switch]──JST──▶ MaTouch battery connector
-MaTouch Mabee I2C (Grove) ──SparkFun cable──▶ gauge Qwiic 1
-gauge Qwiic 2 ──Qwiic→female Dupont──▶ PN532 header (GND / VCC / SDA / SCL)
+Battery ──PH 2.0──▶ gauge BAT A
+gauge BAT B ─PH pigtail─ red ─[SPST switch, both wires in series]─ red ─PH pigtail─▶ MaTouch battery socket
+                         black ──────────────────────────────────── black
+                         ▲ STILL MISSING: 2× JST-PH 2.0 2-pin pigtails
+
+Y harness:  Grove ──▶ MaTouch I2C socket
+            Grove ──▶ PN532
+            Qwiic ──▶ gauge (either Qwiic socket)
+            splice: black↔black, red↔red, yellow↔yellow (SCL), Grove white ↔ Qwiic blue (SDA)
 ```
+
+- The panel switch is a plain 2-wire SPST (beeps only when ON). Its red/black wire colours mean nothing: both go in the battery **+** line. Never land its black on battery −.
+- The MaTouch has its own charge LED (green seen on USB with no battery attached; states not yet mapped).
 
 - The gauge stays on the battery side of the switch, so it keeps its state of charge (SoC) model while the device is off. The switch still stops charging when it is off; that is accepted.
 - Check that red lines up with **+** at every JST. Cheap LiPo leads don't follow one polarity convention.
 - When shortening battery leads, cut **one wire at a time**, stagger the splices, and heat-shrink each one.
 - Don't trust the kit's wire colours: match each wire to the silkscreen at both ends.
-- The current PN532 cable (Grove to Grove, with the PN532 end pushed onto its header) becomes a spare.
 
 ## I2C bus after the change
 
@@ -56,7 +66,7 @@ The gauge board adds its own pull-ups to the bus. If I2C becomes flaky (PN532 au
 | 0x08 VERSION | presence check | `0x001x` (0xFFFF = chip present, no battery) |
 | 0x16 CRATE | charge rate | signed, 0.208 %/hr/LSB |
 
-- `init()` runs right after the boot I2C scan, before `rfid.init()`. With no gauge, `status().present == false` and the status bar shows nothing. The device works normally without one.
+- `init()` runs right after the boot I2C scan, before `rfid.init()`. With no gauge, `status().present == false` and the status bar shows a ghosted empty battery. The device works normally without one.
 - `tick(now)` runs from `loop()` and polls every **5 s**. It shares the loop task with PN532 auto-read and GT911 touch, so there's no cross-task I2C contention. A gauge missing at boot is re-probed, so hot-plugging works.
 - No library dependency, no reset, and chip defaults (hibernate thresholds, alerts) are left alone.
 
@@ -66,13 +76,13 @@ The gauge board adds its own pull-ups to the bus. If I2C becomes flaky (PN532 au
 - Level `Low` < 15 %, `Critical` < 5 %, each clearing only 2 % above its threshold.
 - Displayed % is clamped to 0–100 and moves at most 1 % per poll. The first reading is shown as-is.
 - Icon: `LV_SYMBOL_BATTERY_EMPTY/_1/_2/_3/_FULL` at <10/<35/<60/<85/≥85 %, plus `LV_SYMBOL_CHARGE` while charging. Text: `72%`, `72%+`, or `Full`.
-- Colour: green when charging or full, amber when low, red when critical, grey otherwise.
+- Style (`battery::iconStyle()`): **ghosted** (empty battery, grey, 40 % opacity) with no gauge or at 0 % displayed; otherwise the fill level in **green**, amber when Low, red when Critical. Charging/Full stays green. (Bradley's spec, 2026-11-27.)
 - The thresholds are first guesses. Tune them with the serial `battery` command.
 
 There's no USB-present signal. The gauge only sees the cell, so "plugged in" is inferred from CHARGING/FULL.
 
 ### UI wiring
-- `ScreenMain::updateBattery(const battery::Status&)` drives `labelBattStatus`. It is called from the 2 s status-bar refresh in `loop()` via `UIManager::updateBatteryStatus()`. With no gauge the label text is empty rather than hidden, so the status text stays centred.
+- `ScreenMain::updateBattery(const battery::Status&)` drives `labelBattStatus`. It is called from the 2 s status-bar refresh in `loop()` via `UIManager::updateBatteryStatus()`. With no gauge it shows the ghosted icon with no text.
 - **Not wired, on purpose:** `SystemEvent::BATTERY_CRITICAL` → `SystemState::LOW_BATTERY`. That state only exits on `WAKE_UP`, which nothing sends, so firing it would strand the UI. A low-battery state needs its own design (what's blocked, how to leave) before it's connected.
 - The old `UIManager::updateBattery(float)` + `labelBattery` overlay (hidden, Waveshare-era "<1 V = USB") is untouched and unused.
 
@@ -84,4 +94,4 @@ There's no USB-present signal. The gauge only sees the cell, so "plugged in" is 
 2. PN532 auto-read and write still work with the gauge on the bus.
 3. `battery` shows a sane voltage (3.0–4.2 V) and an SoC that tracks over about 30 min.
 4. On USB: rate goes positive and the charging icon shows. On unplug: within about 1 min it flips to discharging.
-5. Unplug the gauge: firmware boots normally with the battery UI hidden.
+5. Unplug the gauge: firmware boots normally with the battery icon ghosted.

@@ -103,6 +103,51 @@ void test_status_text() {
     TEST_ASSERT_EQUAL_STRING("", buf);
 }
 
+// ---- icon style: ghosted at 0 % / no gauge, green otherwise, amber/red warnings ----
+
+static Status st(float pct, ChargeState c = ChargeState::Discharging, Level l = Level::Ok, bool present = true) {
+    Status s; s.present = present; s.voltage = 3.8f; s.percent = pct; s.charge = c; s.level = l; return s;
+}
+
+void test_icon_no_gauge_is_ghosted_empty() {
+    IconStyle i = iconStyle(st(50, ChargeState::Unknown, Level::Ok, false));
+    TEST_ASSERT_TRUE(i.ghost);
+    TEST_ASSERT_EQUAL(0, i.bars);
+}
+
+void test_icon_zero_percent_is_ghosted() {
+    IconStyle i = iconStyle(st(0.4f, ChargeState::Discharging, Level::Critical));
+    TEST_ASSERT_TRUE(i.ghost);
+    TEST_ASSERT_EQUAL(0, i.bars);
+}
+
+void test_icon_partial_is_green_with_bars() {
+    IconStyle i = iconStyle(st(50));
+    TEST_ASSERT_FALSE(i.ghost);
+    TEST_ASSERT_EQUAL_HEX32(COLOR_GREEN, i.color);
+    TEST_ASSERT_EQUAL(2, i.bars);
+}
+
+void test_icon_one_percent_is_green_not_ghost() {
+    IconStyle i = iconStyle(st(1, ChargeState::Discharging, Level::Ok));
+    TEST_ASSERT_FALSE(i.ghost);
+}
+
+void test_icon_full_is_green_full_bars() {
+    IconStyle i = iconStyle(st(100, ChargeState::Full));
+    TEST_ASSERT_EQUAL_HEX32(COLOR_GREEN, i.color);
+    TEST_ASSERT_EQUAL(4, i.bars);
+}
+
+void test_icon_low_is_amber_critical_is_red() {
+    TEST_ASSERT_EQUAL_HEX32(COLOR_AMBER, iconStyle(st(12, ChargeState::Discharging, Level::Low)).color);
+    TEST_ASSERT_EQUAL_HEX32(COLOR_RED, iconStyle(st(3, ChargeState::Discharging, Level::Critical)).color);
+}
+
+void test_icon_charging_overrides_low_to_green() {
+    TEST_ASSERT_EQUAL_HEX32(COLOR_GREEN, iconStyle(st(3, ChargeState::Charging, Level::Critical)).color);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_positive_rate_is_charging);
@@ -120,5 +165,12 @@ int main(int, char**) {
     RUN_TEST(test_display_clamped_to_0_100);
     RUN_TEST(test_bars_buckets);
     RUN_TEST(test_status_text);
+    RUN_TEST(test_icon_no_gauge_is_ghosted_empty);
+    RUN_TEST(test_icon_zero_percent_is_ghosted);
+    RUN_TEST(test_icon_partial_is_green_with_bars);
+    RUN_TEST(test_icon_one_percent_is_green_not_ghost);
+    RUN_TEST(test_icon_full_is_green_full_bars);
+    RUN_TEST(test_icon_low_is_amber_critical_is_red);
+    RUN_TEST(test_icon_charging_overrides_low_to_green);
     return UNITY_END();
 }

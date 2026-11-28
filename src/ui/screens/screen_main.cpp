@@ -66,11 +66,10 @@ void ScreenMain::init() {
     lv_obj_set_flex_flow(statusBar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(statusBar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // Empty text (not hidden) so the space-between row keeps the status text centred.
+    // Ghosted empty battery until the first gauge reading (none = stays ghosted); see updateBattery().
     labelBattStatus = lv_label_create(statusBar);
-    lv_label_set_text(labelBattStatus, "");
     lv_obj_set_style_text_font(labelBattStatus, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(labelBattStatus, lv_color_hex(0x808080), 0);
+    updateBattery(battery::Status{});
 
     // Operation status (center of top bar). Moved out of the 100px bottom row, where it
     // overflowed and was scrolled out of view.
@@ -279,23 +278,16 @@ void ScreenMain::updateStatusBar(bool wifiConnected, int8_t rssi, const char* ss
 }
 
 void ScreenMain::updateBattery(const battery::Status& s) {
-    if (!s.present) {
-        lv_label_set_text(labelBattStatus, "");
-        return;
-    }
     static const char* const ICONS[] = { LV_SYMBOL_BATTERY_EMPTY, LV_SYMBOL_BATTERY_1, LV_SYMBOL_BATTERY_2,
                                          LV_SYMBOL_BATTERY_3, LV_SYMBOL_BATTERY_FULL };
+    const battery::IconStyle icon = battery::iconStyle(s);
     char text[16];
-    battery::formatBatteryText(s, text, sizeof(text));
-    const bool charging = s.charge == battery::ChargeState::Charging;
-    lv_label_set_text_fmt(labelBattStatus, "%s%s %s", ICONS[battery::batteryBars(s.percent)],
-                          charging ? LV_SYMBOL_CHARGE : "", text);
-
-    uint32_t color = 0xC0C0C0;
-    if (charging || s.charge == battery::ChargeState::Full) color = 0x00C853;
-    else if (s.level == battery::Level::Critical)          color = 0xFF5252;
-    else if (s.level == battery::Level::Low)               color = 0xFFB300;
-    lv_obj_set_style_text_color(labelBattStatus, lv_color_hex(color), 0);
+    battery::formatBatteryText(s, text, sizeof(text));   // "" with no gauge
+    const bool charging = s.present && s.charge == battery::ChargeState::Charging;
+    lv_label_set_text_fmt(labelBattStatus, "%s%s%s%s", ICONS[icon.bars], charging ? LV_SYMBOL_CHARGE : "",
+                          text[0] ? " " : "", text);
+    lv_obj_set_style_text_color(labelBattStatus, lv_color_hex(icon.color), 0);
+    lv_obj_set_style_text_opa(labelBattStatus, icon.ghost ? LV_OPA_40 : LV_OPA_COVER, 0);
 }
 
 void ScreenMain::update(const SpoolData& data) {
