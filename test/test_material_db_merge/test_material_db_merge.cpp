@@ -80,6 +80,68 @@ void test_richer_printer_colours_win() {
     TEST_ASSERT_EQUAL(0u, st.coloursKept);
 }
 
+// Hyper PC: board and printer both list one colour, so "longer wins" never added Transparent.
+// Colours are a union: anything either side lists survives; same hex (any case) is one colour.
+void test_colours_are_a_union() {
+    JsonDocument cur, inc;
+    deserializeJson(cur, R"({"result":{"list":[{"base":{"id":"07002","colors":["#000000"],
+        "mixColorInfoList":[{"colorEn":"Black","hexValue":"#000000"}]}}]}})");
+    deserializeJson(inc, R"({"result":{"list":[{"base":{"id":"07002","colors":["#000000","#ffffff00"],
+        "mixColorInfoList":[{"colorEn":"Transparent","hexValue":"#FFFFFF00"}]}}]}})");
+    DbMergeStats st;
+    mergeMaterialDb(cur, inc, st);
+    JsonObject b = inc["result"]["list"][0]["base"];
+    TEST_ASSERT_EQUAL(2, b["colors"].size());
+    TEST_ASSERT_EQUAL(2, b["mixColorInfoList"].size());
+    TEST_ASSERT_EQUAL_STRING("Black", b["mixColorInfoList"][1]["colorEn"]);   // name from current
+}
+
+void test_union_fills_missing_name_only() {
+    JsonDocument cur, inc;
+    deserializeJson(cur, R"({"result":{"list":[{"base":{"id":"1","colors":["#111111"],
+        "mixColorInfoList":[{"colorEn":"Coal","hexValue":"#111111"}]}}]}})");
+    deserializeJson(inc, R"({"result":{"list":[{"base":{"id":"1","colors":["#111111"],
+        "mixColorInfoList":[{"colorEn":"","hexValue":"#111111"}]}}]}})");
+    DbMergeStats st;
+    mergeMaterialDb(cur, inc, st);
+    JsonObject b = inc["result"]["list"][0]["base"];
+    TEST_ASSERT_EQUAL(1, b["colors"].size());
+    TEST_ASSERT_EQUAL(1, b["mixColorInfoList"].size());
+    TEST_ASSERT_EQUAL_STRING("Coal", b["mixColorInfoList"][0]["colorEn"]);
+}
+
+// Firmware-bundled product colours (from data/material_database.json) are a third source.
+static const char* BUNDLED = R"({"07002":{"colors":["#000000","#FFFFFF00"],
+    "mixColorInfoList":[{"colorEn":"Black","hexValue":"#000000"},{"colorEn":"Transparent","hexValue":"#FFFFFF00"}]},
+  "05001":{"colors":["#C0C0C0"],"mixColorInfoList":[{"colorEn":"Silver","hexValue":"#C0C0C0"}]}})";
+
+void test_bundled_colours_added_everywhere() {
+    JsonDocument cur, inc, bun;
+    deserializeJson(cur, R"({"result":{"list":[
+        {"base":{"id":"05001","name":"CR-Silk","colors":["#FFD700"]}}]}})");          // local only
+    deserializeJson(inc, R"({"result":{"list":[{"base":{"id":"07002","colors":["#000000"]}}]}})");
+    deserializeJson(bun, BUNDLED);
+    DbMergeStats st;
+    mergeMaterialDb(cur, inc, st, &bun);
+    JsonObject pc = findId(inc, "07002")["base"];
+    TEST_ASSERT_EQUAL(2, pc["colors"].size());
+    TEST_ASSERT_EQUAL_STRING("#FFFFFF00", pc["colors"][1]);
+    TEST_ASSERT_EQUAL_STRING("Transparent", pc["mixColorInfoList"][1]["colorEn"]);
+    JsonObject silk = findId(inc, "05001")["base"];
+    TEST_ASSERT_EQUAL(2, silk["colors"].size());
+    TEST_ASSERT_EQUAL(2u, st.bundledColoursAdded);   // 07002 Transparent + 05001 Silver
+}
+
+void test_bundled_merge_is_idempotent() {
+    JsonDocument cur, inc, bun;
+    deserializeJson(inc, R"({"result":{"list":[{"base":{"id":"07002","colors":["#000000","#ffffff00"]}}]}})");
+    deserializeJson(bun, BUNDLED);
+    DbMergeStats st;
+    mergeMaterialDb(cur, inc, st, &bun);
+    TEST_ASSERT_EQUAL(2, inc["result"]["list"][0]["base"]["colors"].size());
+    TEST_ASSERT_EQUAL(0u, st.bundledColoursAdded);
+}
+
 void test_no_current_db_takes_download_as_is() {
     JsonDocument cur, inc;
     deserializeJson(inc, INCOMING);
@@ -103,6 +165,10 @@ int main() {
     RUN_TEST(test_new_printer_profiles_added);
     RUN_TEST(test_local_only_profiles_kept_in_order);
     RUN_TEST(test_richer_printer_colours_win);
+    RUN_TEST(test_colours_are_a_union);
+    RUN_TEST(test_union_fills_missing_name_only);
+    RUN_TEST(test_bundled_colours_added_everywhere);
+    RUN_TEST(test_bundled_merge_is_idempotent);
     RUN_TEST(test_no_current_db_takes_download_as_is);
     RUN_TEST(test_bad_download_rejected);
     return UNITY_END();

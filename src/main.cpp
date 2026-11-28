@@ -30,6 +30,8 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("--- Booting ---");
+    Serial.printf("Reset reason: %d (1 power-on, 3 software, 4 panic, 5 int-wdt, 6 task-wdt, 7 wdt, 9 brownout)\n",
+                  (int)esp_reset_reason());
     Serial.printf("Mem[boot]:    heap=%u  psram=%u  minHeap=%u\n",
                   ESP.getFreeHeap(), ESP.getFreePsram(), ESP.getMinFreeHeap());
 
@@ -85,6 +87,7 @@ void setup() {
 
     // For now, let's assume Bluetooth is available if the code compiles
     splash_update_status(2, "Available", true);
+    sdStorage.mount();      // before the DB load: the material DB is read from the card if it has one
     bool db_ok = filamentDB.init();
     Serial.printf("Mem[filamentDB]: heap=%u  psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
     splash_update_status(3, db_ok ? "Loaded" : "Failed", db_ok);
@@ -242,7 +245,7 @@ void rfid_task() {
 }
 
 // Serial console for bench testing: "url" prints the Spoolman URL, "url <value>" sets and saves it
-// (same as the Wi-Fi portal field), "sync" starts a sync now.
+// (same as the Wi-Fi portal field), "sync" starts a sync now, "colors <id>" lists a profile's colours.
 static void serial_console() {
     static char line[160];
     static size_t len = 0;
@@ -284,11 +287,22 @@ static void serial_console() {
             if (!b.present) Serial.println("CONSOLE: battery gauge not present (0x36)");
             else Serial.printf("CONSOLE: battery %.3fV %.1f%% rate=%+.1f%%/hr %s level=%s\n", b.voltage,
                                b.percent, b.rateHr, CHARGE[(int)b.charge], LEVEL[(int)b.level]);
+        } else if (strncmp(line, "colors ", 7) == 0) {   // read-only: a profile's parsed colours
+            FilamentProfile p;
+            if (!filamentDB.getProfileById(String(line + 7), p)) {
+                Serial.printf("CONSOLE: no profile '%s'\n", line + 7);
+            } else {
+                Serial.printf("CONSOLE: %s %s: %u colours\n", p.id.c_str(), p.name.c_str(), (unsigned)p.colors.size());
+                for (size_t i = 0; i < p.colors.size(); i++)
+                    Serial.printf("CONSOLE:   #%06X a=%02X \"%s\"\n", (unsigned)p.colors[i],
+                                  i < p.color_alphas.size() ? p.color_alphas[i] : 0xFF,
+                                  i < p.color_names.size() ? p.color_names[i].c_str() : "");
+            }
         } else if (strcmp(line, "sync") == 0) {
             spoolmanSync.kick();
             Serial.println("CONSOLE: sync started");
         } else {
-            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | sync | state | battery)\n", line);
+            Serial.printf("CONSOLE: unknown command '%s' (url | url <value> | printer | printer <ip> | colors <id> | sync | state | battery)\n", line);
         }
     }
 }

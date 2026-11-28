@@ -36,7 +36,7 @@ Build requires C++17. Full builds may take 2+ minutes due to linking. The board 
 ## Architecture
 
 ### Boot sequence (main.cpp)
-`setup()`: Serial → `lvgl_display_init()` (splash) → `filamentDB.init()` (LittleFS JSON) → `network.init()` → `sysState.init()` → `config.init()` → `ui.init()` → `loop()`: `lv_tick_inc()` + `lv_timer_handler()` + `network.process()` + `rfid_task()`.
+`setup()`: Serial → `lvgl_display_init()` (splash) → `sdStorage.mount()` → `filamentDB.init()` (SD, else LittleFS JSON) → `network.init()` → `sysState.init()` → `config.init()` → `ui.init()` → `loop()`: `lv_tick_inc()` + `lv_timer_handler()` + `network.process()` + `rfid_task()`.
 
 WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into the boot sequence and main loop.
 
@@ -45,7 +45,7 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 | Module | Files | Role |
 |--------|-------|------|
 | **Display** | `src/lvgl_display.cpp`, `include/LGFX_Config.h` | LovyanGFX + LVGL 9 display/touch driver init |
-| **FilamentDB** | `src/filament_db.cpp`, `include/filament_db.h` | Loads `material_database.json` from LittleFS into `std::vector<FilamentProfile>` cache; provides dropdown option strings |
+| **FilamentDB** | `src/filament_db.cpp`, `include/filament_db.h` | Loads `material_database.json` (SD card copy if present, else LittleFS; `include/material_db_store.h`) into `std::vector<FilamentProfile>` cache; provides dropdown option strings |
 | **SpoolData** | `include/spool_data.h` | CFS tag payload model; constructs from `FilamentProfile` (write path) or raw tag string (read path); 5-char material type on-tag; maps material codes to marketing names (e.g., Hyper PLA) |
 | **RFID** | `src/rfid_driver.cpp`, `include/rfid_driver.h` | PN532 driver; Key A derivation from UID; `readCFSTag()`/`writeCFSTag()` |
 | **UIManager** | `src/ui/ui_manager.cpp` | Screen management, event handling, `currentSpool`, color picker, `updateDashboardFromSpool()` |
@@ -57,7 +57,7 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 | **Spoolman** | `src/spoolman_client.cpp`, `include/spoolman_client.h`, `include/spoolman_parse.h` | Read-only lookup by tag UID on its own FreeRTOS task; results polled from `loop()`. Parsing is host-testable |
 
 ### Data flow
-1. **Startup:** LittleFS → FilamentDB parses JSON → cache of `FilamentProfile`
+1. **Startup:** SD (else LittleFS) → FilamentDB parses JSON → cache of `FilamentProfile`
 2. **Library pick:** Grid tap → `FilamentProfile` → `SpoolData(profile)` → `ui.currentSpool` → `updateDashboardFromSpool()`
 3. **Auto-Read tag:** Background `rfid_task()` detects tag → `rfid.readCFSTag(spool)` → `updateDashboardFromSpool()` → status "Tag Read OK"
 4. **Write tag:** Write button → `rfid.writeCFSTag(ui.currentSpool)` → status feedback
@@ -68,7 +68,8 @@ WiFi, RFID (Auto-Read), and sound (GPIO19) are fully active and integrated into 
 
 ## Data Formats
 
-### Material database (`data/material_database.json` → LittleFS `/material_database.json`)
+### Material database (`data/material_database.json` → LittleFS `/material_database.json`; Update DB → SD `/material_database.json`)
+Update DB writes the merged DB to the SD card when one is mounted (the RGB panel slid diagonally during the 430 KB LittleFS write, inferred to be a PSRAM stall; SD write 0.6 s vs 5.8 s, 2026-11-25), and the SD copy then wins at boot. **So after an `uploadfs` of a new `data/material_database.json`, the SD copy still shadows it**: delete `/material_database.json` from the card, or press Update DB (which merges into the SD copy). The repo's product colours also reach the board through `include/bundled_colors.h` (`scripts/gen_bundled_colors.py`).
 JSON with `result.list[]` array. Each entry has `base.{id, brand, name, meterialType, colors[]}` and `kvParam.{nozzle_temperature, hot_plate_temp}`. Note: upstream field is `meterialType` (typo). Parsed by `FilamentDB` with ArduinoJson v7 into `std::vector<FilamentProfile>` cache.
 
 ### CFS tag payload (SpoolData string)

@@ -8,6 +8,10 @@
 #include "mbedtls/sha256.h"
 #include <psram_allocator.h>
 #include <material_db_merge.h>
+#include <bundled_colors.h>
+#include <esp_task_wdt.h>
+#include <material_db_store.h>
+#include <StreamUtils.h>
 
 AppNetwork network;
 
@@ -145,7 +149,21 @@ bool AppNetwork::validateDBSchema(JsonDocument& doc, uint16_t& profileCount) {
 // ---------------------------------------------------------------------------
 // P1.10: Enhanced DB update with SHA-256 hash check and schema validation
 // ---------------------------------------------------------------------------
+// Update DB runs on the loop task, which has a 20 s task watchdog (main.cpp). Download + parse +
+// merge + a 400 KB LittleFS write + reload can take longer (the board rebooted mid-update on
+// 2026-11-25), so the task leaves the watchdog for the update, as FilamentDB's load already does.
+// filamentDB.init() re-adds it near the end; adding twice is harmless.
+namespace {
+struct WdtPause {
+    TaskHandle_t t = xTaskGetCurrentTaskHandle();
+    WdtPause()  { esp_task_wdt_delete(t); }
+    ~WdtPause() { esp_task_wdt_add(t); esp_task_wdt_reset(); }
+};
+}  // namespace
+
 DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
+    WdtPause wdtPause;
+    const uint32_t tStart = millis();
     DBUpdateResult result = {false, false, 0, ""};
     _lastError = "";
 
@@ -235,14 +253,21 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
         return result;
     }
 
-    Serial.printf("Downloaded %u bytes\n", totalRead);
+    Serial.printf("Downloaded %u bytes (%lu ms)\n", totalRead, (unsigned long)(millis() - tStart));
 
     // FSD 5.6 step 5: Compute SHA-256
     String newHash = computeSHA256(dbBuf, totalRead);
     Serial.printf("SHA-256: %s\n", newHash.c_str());
 
+    // The merge also takes the firmware's bundled colours, so a new firmware with new colours
+    // must re-merge even when the printer's file is unchanged: key the skip on both.
+    newHash += "+" + computeSHA256((const uint8_t*)BUNDLED_COLORS_JSON, sizeof(BUNDLED_COLORS_JSON) - 1)
+                         .substring(0, 16);
+
     // FSD 5.6 step 6: Compare hash
-    if (newHash == config.data.db_hash && !config.data.db_hash.isEmpty()) {
+    // Not up to date if the DB still has to move to the SD card (card fitted, no copy on it yet).
+    const bool inPlace = materialDbReadLocation().fs == materialDbWriteLocation().fs;
+    if (inPlace && newHash == config.data.db_hash && !config.data.db_hash.isEmpty()) {
         free(dbBuf);
         result.success = true;
         result.skipped = true;
@@ -270,7 +295,9 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
 
     JsonDocument current(psramJsonAllocator());
     {
-        File cur = LittleFS.open("/material_database.json", "r");
+        const MaterialDbLocation src = materialDbReadLocation();
+        Serial.printf("DB update: merging into %s copy\n", src.name);
+        File cur = src.fs->open(MATERIAL_DB_PATH, "r");
         if (cur) {
             DeserializationError cerr = deserializeJson(current, cur);
             cur.close();
@@ -280,44 +307,61 @@ DBUpdateResult AppNetwork::updateFilamentDBWithValidation() {
             }
         }
     }
+    // Product colours bundled in the firmware (data/material_database.json): colours the printer's
+    // factory file lacks, like Hyper PC Transparent, reach the board without a uploadfs.
+    JsonDocument bundled(psramJsonAllocator());
+    DeserializationError berr = deserializeJson(bundled, BUNDLED_COLORS_JSON);
+    if (berr) Serial.printf("DB merge: bundled colours unreadable (%s), skipped\n", berr.c_str());
+    Serial.printf("DB update: current DB parsed (%lu ms)\n", (unsigned long)(millis() - tStart));
     DbMergeStats st;
-    mergeMaterialDb(current, incoming, st);   // incoming has result.list (validated above)
+    mergeMaterialDb(current, incoming, st, berr ? nullptr : &bundled);   // incoming has result.list
     current.clear();
+    bundled.clear();
     const uint16_t profileCount = incoming["result"]["list"].size();
-    Serial.printf("DB merge: %u updated (%u kept their colours), %u new, %u kept from current; %u total. "
-                  "Free PSRAM %u\n", st.updated, st.coloursKept, st.added, st.keptLocalOnly, profileCount,
+    Serial.printf("DB merge: %u updated (%u kept their colours), %u new, %u kept from current, "
+                  "%u bundled colours added; %u total. Free PSRAM %u\n", st.updated, st.coloursKept,
+                  st.added, st.keptLocalOnly, st.bundledColoursAdded, profileCount,
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
-    // Write to temp file for atomic replace
-    File file = LittleFS.open("/material_database.json.tmp", "w");
+    // Write to a temp file, then replace. SD card when mounted (doesn't stall the RGB panel).
+    const MaterialDbLocation dst = materialDbWriteLocation();
+    File file = dst.fs->open(MATERIAL_DB_TMP_PATH, "w");
     if (!file) {
-        result.message = "Storage error: cannot create temp file";
+        result.message = String("Storage error: cannot create temp file on ") + dst.name;
         _lastError = result.message;
         return result;
     }
-    const size_t written = serializeJson(incoming, file);
-    file.flush();
+    Serial.printf("DB update: merged, writing to %s (%lu ms)\n", dst.name, (unsigned long)(millis() - tStart));
+    size_t written = 0;
+    {
+        WriteBufferingStream buffered(file, 4096);   // serializeJson writes in tiny pieces
+        written = serializeJson(incoming, buffered);
+        buffered.flush();
+    }
+    const size_t onDisk = file.size();
     file.close();
     incoming.clear();
-    if (written == 0) {
-        LittleFS.remove("/material_database.json.tmp");
-        result.message = "Storage error: could not write merged DB";
+    if (written == 0 || onDisk != written) {
+        dst.fs->remove(MATERIAL_DB_TMP_PATH);
+        result.message = String("Storage error: could not write merged DB to ") + dst.name;
+        _lastError = result.message;
+        Serial.printf("DB update: wrote %u of %u bytes on %s\n", (unsigned)onDisk, (unsigned)written, dst.name);
+        return result;
+    }
+
+    // Replace (FAT and LittleFS rename don't overwrite)
+    if (dst.fs->exists(MATERIAL_DB_PATH)) dst.fs->remove(MATERIAL_DB_PATH);
+    if (!dst.fs->rename(MATERIAL_DB_TMP_PATH, MATERIAL_DB_PATH)) {
+        result.message = String("Storage error: rename failed on ") + dst.name;
         _lastError = result.message;
         return result;
     }
 
-    // Atomic replace
-    if (LittleFS.exists("/material_database.json")) {
-        LittleFS.remove("/material_database.json");
-    }
-    if (!LittleFS.rename("/material_database.json.tmp", "/material_database.json")) {
-        result.message = "Storage error: rename failed";
-        _lastError = result.message;
-        return result;
-    }
-
+    Serial.printf("DB update: written %u bytes, reloading (%lu ms)\n", (unsigned)written,
+                  (unsigned long)(millis() - tStart));
     // FSD 5.6 step 10: Reload database cache
     filamentDB.init();
+    Serial.printf("DB update: done (%lu ms)\n", (unsigned long)(millis() - tStart));
 
     // FSD 5.6 step 11: Update config metadata
     config.data.db_hash = newHash;

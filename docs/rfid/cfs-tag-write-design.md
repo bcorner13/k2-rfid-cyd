@@ -55,6 +55,16 @@ These fields are already produced by `SpoolData::_generateSpooldataString()`:
 The real Creality tag has `000000` at 34–39, then `05 00 …`. The reference pads with ASCII `0`.
 The reference project's users report the K2 accepts its tags. That is a claim we have not verified ourselves (open question 1).
 
+**Clear / translucent colours (unverified).** `material_database.json` gives these as `#RRGGBBAA`:
+`AA=00` = Transparent (`#FFFFFF00` on CR-PETG 06001, Hyper PETG 06002, Hyper PC 07002), `AA=80` =
+translucent (e.g. `#2125AB80` CR-PETG Transparent Blue). The tag has 6 RGB digits, so we write the
+RGB only and drop the alpha: Transparent goes on the tag as `FFFFFF`, the same as White. It may be that
+Creality encodes transparency somewhere (perhaps the pos-17 prefix), but we have no reference: as of
+2026-11-25 we hadn't seen a factory tag on a clear spool (Hyper PC Transparent ships on a cardboard
+spool, untagged). On read-back an opaque name wins over a clear one with the same RGB
+(`FilamentDB::productColorName`). If a tagged clear spool turns up, read `box.Tn.color_value` and
+the raw payload from Moonraker and update this.
+
 ## 3. Write sequence
 
 ```
